@@ -1,0 +1,66 @@
+Standar,SubStandar,Item,Uraian,Bobot,PIC,Item Preseden/Referensi,Progress,URL Link,Bab_Weight,Sub_Weight,Net_Bobot
+1,,,DED - Identitas Pengusul,1.3333333,AM,,0,,1.3333333,,1.3333333
+2,,,DED - Identitas Tim Penyusun DED,1.3333333,LMS,,0,,1.3333333,,1.3333333
+3,,,DED - Kata Pengantar,1.3333333,PS,,0,,1.3333333,,1.3333333
+4,,,DED - Ringkasan Eksekutif,1.3333333,NAR,,0,,1.3333333,,1.3333333
+5,,,DED - Continuous Improvement,1.3333333,FI,,0,,1.3333333,,1.3333333
+6,,,DED - 1. Pendahuluan,2.6666667,SDC,,0,,2.6666667,,2.6666667
+6,6.1,,DED - A. Dasar Penyusunan,33.0,"SDC, MRI, IKS",,0,,2.6666667,33.0,0.8800000109999999
+6,6.2,,DED - B. Tim Penyusun dan Tanggungjawabnya,33.0,"SDC, MRI, IKS",,0,,2.6666667,33.0,0.8800000109999999
+6,6.3,,DED - C. Mekanisme Kerja Penyusunan Evaluasi Diri,34.0,"SDC, MRI, IKS",,0,,2.6666667,34.0,0.906666678
+7,,,DED - 2. A Profil Unit Pengelola Program Studi,2.6666667,"LRN, SYN",,0,,2.6666667,,2.6666667
+8,,,DED - 2. B1. Orientasi Strategis,6.6666667,MSS,,0,,6.6666667,,6.6666667
+8,8.1,,DED - a Misi,25.0,"MSS, NGM, SDC, PS, GAH",,0,,6.6666667,25.0,1.666666675
+8,8.2,,DED - b. Visi,25.0,"MSS, NGM, SDC, PS, GAH",,0,,6.6666667,25.0,1.666666675
+8,8.3,,DED - c. Tujuan dan Sasaran,25.0,"MSS, NGM, SDC, PS, GAH",,0,,6.6666667,25.0,1.666666675
+8,8.4,,DED - d. Strategi,25.0,"MSS, NGM, SDC, PS, GAH",,0,,6.6666667,25.0,1.666666675
+9,,,DED - 2. B2. Tata Pamong dan Tata Kelola,6.666666667,LAM,,0,,6.666666667,,6.666666667
+9,9.1,,DED - a. Tata Pamong,50.0,"LAM, UN, LRN",,0,,6.666666667,50.0,3.3333333335
+9,9.2,,DED - b. Tata Kelola,50.0,"LAM, UN, LRN",,0,,6.666666667,50.0,3.3333333335
+10,,,DED - 2. B3. Pengelolaan Mahasiswa,6.666666667,MRI,,0,,6.666666667,,6.666666667
+10,10.1,,DED - a. Penerimaan Mahasiswa,20.0,"MRI, HA, UN",,0,,6.666666667,20.0,1.3333333334
+10,10.2,,DED - b. Layanan Akademik Mahasiswa,20.0,"MRI, HA, UN",,0,,6.666666667,20.0,1.3333333334
+10,10.3,,DED - c. Kinerja Akademik Mahasiswa,20.0,"MRI, HA, UN",,0,,6.666666667,20.0,1.3333333334
+10,10.4,,DED - d. Kesejahteraan Mahasiswa,20.0,"MRI, HA, NAR",,0,,6.666666667,20.0,1.3333333334
+10,10.5,,DED - e. Pengembangan Karir Mahasiswa,20.0,"MRI, HA, NAR",,0,,6.666666667,20.0,1.3333333334
+11,,,DED - 2. B4. Pengelolaan Dosen dan Tenaga Kependidikan,4.0,NAR,,0,,4.0,,4.0
+11,11.1,,DED - a. Dosen,16.66666667,"NAR, NGM, IKS, AM",,0,,4.0,16.66666667,0.6666666668000001
+11,11.1,11.1.1,DED - a1. Kecukupan dan Kualifikasi Dosen,50.0,"NAR, NGM, IKS, AM",,0,,4.0,16.66666667,0.33333333340000004
+11,11.1,11.1.2,DED - a2. Pengelolaan Dosen,50.0,"NAR, NGM, IKS, AM",,0,,4.0,16.66666667,0.33333333340000004
+11,11.2,,DED - b. Tenaga Kependidikan,16.66666667,"NAR, NGM, IKS, AM",,0,,4.0,16.66666667,0.6666666668000001
+11,11.2,11.2.1,DED - b1. Kecukupan dan Kualifikasi Tenaga Kependidikan,50.0,"NAR, NGM, IKS, LMS",,0,,4.0,16.66666667,0.33333333340000004
+11,11.2,11.2.2,DED - b2. Pengelolaan Tenaga Kependidikan,50.0,"NAR, NGM, IKS, LMS",,0,,4.0,16.66666667,0.33333333340000004
+12,,,"DED - 2.B5. Keuangan, Sarana, dan Prasarana",4.0,SDC,,0,,4.0,,4.0
+12,12.1,,DED - a. Keuangan,50.0,"SDC, YHL",,0,,4.0,50.0,2.0
+12,12.2,,DED - b. Sarana dan Prasarana,50.0,"SDC, IKS, YHL",,0,,4.0,50.0,2.0
+13,,,DED - 2. B6. Pendidikan dan Pengajaran,6.666666667,PP,,0,,6.666666667,,6.666666667
+13,13.1,,DED - Kurikulum,50.0,"PP, FI",,0,,6.666666667,50.0,3.3333333335
+13,13.2,,DED - Jaminan Pembelajaran,50.0,"PP, FI",,0,,6.666666667,50.0,3.3333333335
+14,,,DED - 2.B7. Penelitian dan Pengabdian kepada Masyarakat,6.666666667,PS,,0,,6.666666667,,6.666666667
+14,14.1,,DED - a. Penelitian,25.0,"PS, GWB, SYN",,0,,6.666666667,25.0,1.66666666675
+14,14.2,,DED - b. Pengabdian kepada Masyarakat,25.0,"PS, GWB, HA",,0,,6.666666667,25.0,1.66666666675
+14,14.3,,"DED - c. Analisis, Strategi Pengembangan dan Keberlanjutan UPPS",50.0,"PS, GWB, LAM, HA",,0,,6.666666667,50.0,3.3333333335
+15,,,DED - 3. Penutup,1.333333333,"UN, LAM",,0,,1.333333333,,1.333333333
+16,,,DKPS - Data Dosen dan Tenaga Kependidikan,28.0,LMS,,0,,28.0,,28.0
+16,16.1,,DKPS - Tabel 1 Profil Dosen Berdasarkan Status Kepegawaian,9.523809524,"LRN, FI",,0,,28.0,9.523809524,2.6666666667200003
+16,16.2,,DKPS - Tabel 2 Profil Dosen Berdasarkan Latar Belakang Keahlian,9.523809524,PP,,0,,28.0,9.523809524,2.6666666667200003
+16,16.3,,DKPS - Tabel 3a Profil Dosen Berdasarkan Kontribusi Intelektual,23.80952381,"MSS, SYN, NAR, NGM",,0,,28.0,23.80952381,6.6666666668
+16,16.4,,DKPS - Tabel 3b Profil Dosen Berdasarkan Kontribusi Intelektual,23.80952381,"MSS, SYN, NAR, NGM",,0,,28.0,23.80952381,6.6666666668
+16,16.5,,DKPS - Tabel 4 Ekuivalen Waktu Mengajar Penuh (EWMP),23.80952381,"LAM, IKS",,0,,28.0,23.80952381,6.6666666668
+16,16.6,,DKPS - Tabel 5 Profil Tenaga Kependidikan,9.523809524,LMS,,0,,28.0,9.523809524,2.6666666667200003
+17,,,DKPS - Data Keuangan,2.666666667,YHL,,0,,2.666666667,,2.666666667
+17,17.1,,DKPS - Tabel 6 Profil Keuangan Program Studi yang Diakreditasi,100.0,"SDC, YHL",,0,,2.666666667,100.0,2.666666667
+18,,,DKPS - Data Mahasiswa,4.0,AM,,0,,4.0,,4.0
+18,18.1,,DKPS - Tabel 7 Prestasi Akademik dan Non-Akademik Mahasiswa,66.66666667,MRI,,0,,4.0,66.66666667,2.6666666668
+18,18.2,,DKPS - Tabel 9 Masa Studi Lulusan Program Studi (Khusus Program Sarjana dan Sarjana Terapan),0.0,,,0,,4.0,0.0,0.0
+18,18.3,,DKPS - Tabel 13 Waktu Tunggu Lulusan (Khusus Program Sarjana),0.0,,,0,,4.0,0.0,0.0
+18,18.4,,DKPS - Tabel 15 Kesesuaian Bidang Kerja Lulusan (Khusus Program Diploma Tiga/Sarjana/Sarjana Terapan),0.0,,,0,,4.0,0.0,0.0
+18,18.5,,DKPS - Tabel 16 Jangkauan Operasi Kerja Lulusan (Khusus Program Diploma Tiga/Sarjana/Sarjana Terapan),0.0,,,0,,4.0,0.0,0.0
+18,18.6,,DKPS - Tabel 17 Kepuasan Pengguna (Khusus program Diploma Tiga/Sarjana/Sarjana Terapan),0.0,,,0,,4.0,0.0,0.0
+18,18.7,,DKPS - Tabel 19 Pagelaran/Pameran/Presentasi/Publikasi Ilmiah Mahasiswa (Khusus Program Diploma/Sarjana Terapan/Magister Terapan/Doktor Terapan),0.0,,,0,,4.0,0.0,0.0
+18,18.8,,DKPS - Tabel 20 Data Jumlah Mahasiswa Aktif,33.33333333,LMS,,0,,4.0,33.33333333,1.3333333332000001
+19,,,DKPS - Data Luaran,10.66666667,IKS,,0,,10.66666667,,10.66666667
+19,19.1,,DKPS - Tabel 21 Produk/Jasa yang Dihasilkan Mahasiswa yang Diadopsi Oleh Industri/Masyarakat (Khusus Program Diploma Tiga/Sarjana Terapan/Magister Terapan/Doktor Terapan),25.0,"HA, UN",,0,,10.66666667,25.0,2.6666666675
+19,19.2,,DKPS - Tabel 22 Luaran Penelitian/Pkm yang Dihasilkan Mahasiswa (Khusus Program Sarjana/Sarjana Terapan/Magister/Magister Terapan/Doktor/Doktor Terapan),0.0,,,0,,10.66666667,0.0,0.0
+19,19.3,,DKPS - Tabel 23a Luaran Penelitian/PkM yang Dihasilkan oleh Dosen,37.5,"PS, GWB, MSS, AM, ADH",,0,,10.66666667,37.5,4.00000000125
+19,19.4,,DKPS - Tabel 23b Luaran Penelitian/PkM yang Dihasilkan oleh Dosen,37.5,"PS, GWB, MSS, AM, ADH",,0,,10.66666667,37.5,4.00000000125

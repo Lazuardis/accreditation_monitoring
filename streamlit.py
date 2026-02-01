@@ -859,7 +859,7 @@ def main():
                 
                 leaf_df = calc_df[leaf_mask].copy()
 
-                st.dataframe(leaf_df)
+                # st.dataframe(leaf_df)
 
 
 
@@ -983,7 +983,262 @@ def main():
                 else:
                     st.info("No PIC assignments found. Assign PICs in the Configuration tab to see performance metrics.")
             
+# ==========================================
+                # PERSONAL PIC DASHBOARD
+                # ==========================================
+                st.divider()
+                st.header("👤 PIC Analytics")
+                st.markdown("*Drill down into individual PIC performance with renormalized task weights*")
+                
+                # Check if we have PIC data to work with
+                if not pic_master.empty and 'PIC' in pic_analysis.columns:
+                    
+                    # Get unique PICs from the exploded data
+                    available_pics = sorted(pic_analysis['PIC'].unique())
+                    
+                    if len(available_pics) > 0:
+                        
+                        # === TWO-COLUMN LAYOUT: 0.3 : 0.7 ===
+                        col_left, col_right = st.columns([0.3, 0.7])
+                        
+                        with col_left:
+                            # PIC Selection Dropdown
+                            selected_pic = st.selectbox(
+                                "Select PIC to analyze:",
+                                options=available_pics,
+                                help="Choose a PIC to view their personal task breakdown"
+                            )
+                            
+                            # Display selected PIC in larger text
+                            st.markdown(f"## {selected_pic}")
+                            st.markdown("---")
+                            
+                            # Filter data for selected PIC
+                            pic_tasks = pic_analysis[pic_analysis['PIC'] == selected_pic].copy()
+                            
+                            if not pic_tasks.empty:
+                                # Calculate total weight for this PIC (for renormalization)
+                                total_pic_weight = pic_tasks['Net_Bobot_Per_PIC'].sum()
+                                
+                                # Renormalize weights to 100% relative to this PIC's workload
+                                if total_pic_weight > 0:
+                                    pic_tasks['Relative_Weight'] = (pic_tasks['Net_Bobot_Per_PIC'] / total_pic_weight) * 100
+                                else:
+                                    pic_tasks['Relative_Weight'] = 0
+                                
+                                # Calculate actual progress contribution (relative)
+                                pic_tasks['Relative_Progress'] = (pic_tasks['Relative_Weight'] * pic_tasks['Progress']) / 100
+                                
+                                # Display summary metrics VERTICALLY
+                                st.metric(
+                                    "Total Tasks Assigned",
+                                    len(pic_tasks),
+                                    help=f"Number of tasks assigned to {selected_pic}"
+                                )
+                                
+                                avg_progress = (pic_tasks['Progress'] * pic_tasks['Net_Bobot_Per_PIC']).sum() / total_pic_weight if total_pic_weight > 0 else 0
+                                st.metric(
+                                    "Weighted Avg Progress",
+                                    f"{avg_progress:.2f}%",
+                                    help="Average progress weighted by task importance"
+                                )
+                                
+                                st.metric(
+                                    "Global Responsibility",
+                                    f"{total_pic_weight:.2f}%",
+                                    help="Percentage of total accreditation weight"
+                                )
+                        
+                        with col_right:
+                            if not pic_tasks.empty:
+                                # === TASK-LEVEL PLANNED vs ACTUAL CHART ===
+                                st.subheader(f"📊 Task Performance")
+                                
+                                # Prepare data for plotting with text truncation
+                                chart_data = pic_tasks[['Uraian', 'Relative_Weight', 'Relative_Progress']].copy()
+                                
+                                # Function to truncate long text
+                                def truncate_text(text, max_length=60):
+                                    """Truncate text to max_length and add ellipsis if needed"""
+                                    text_str = str(text)
+                                    if len(text_str) <= max_length:
+                                        return text_str
+                                    else:
+                                        return text_str[:max_length-3] + "..."
+                                
+                                # Create truncated labels for display
+                                chart_data['Uraian_Display'] = chart_data['Uraian'].apply(lambda x: truncate_text(x, 60))
+                                
+                                # Sort by relative weight for better visualization
+                                chart_data = chart_data.sort_values('Relative_Weight', ascending=True)
+                                
+                                # Reshape for grouped bar chart
+                                plot_data = chart_data.melt(
+                                    id_vars='Uraian_Display',
+                                    value_vars=['Relative_Weight', 'Relative_Progress'],
+                                    var_name='Metric',
+                                    value_name='Percentage'
+                                )
+                                
+                                # Rename for clarity
+                                plot_data['Metric'] = plot_data['Metric'].map({
+                                    'Relative_Weight': 'Planned Responsibility (%)',
+                                    'Relative_Progress': 'Actual Progress (%)'
+                                })
+                                
+                                # Create grouped bar chart
+                                fig_tasks = px.bar(
+                                    plot_data,
+                                    y='Uraian_Display',
+                                    x='Percentage',
+                                    color='Metric',
+                                    barmode='group',
+                                    orientation='h',
+                                    text_auto='.1f',
+                                    color_discrete_map={
+                                        'Planned Responsibility (%)': '#636EFA',
+                                        'Actual Progress (%)': '#00CC96'
+                                    }
+                                )
+                                
+                                fig_tasks.update_layout(
+                                    xaxis_title="Percentage (%)",
+                                    yaxis_title="Task Description",
+                                    height=max(400, len(chart_data) * 35),  # Dynamic height based on task count
+                                    showlegend=True,
+                                    legend=dict(
+                                        orientation="h",
+                                        yanchor="bottom",
+                                        y=1.02,
+                                        xanchor="right",
+                                        x=1
+                                    ),
+                                    # Wrap text on y-axis
+                                    yaxis=dict(
+                                        tickmode='linear',
+                                        automargin=True
+                                    ),
+                                    margin=dict(l=20, r=20, t=40, b=20)
+                                )
+                                
+                                st.plotly_chart(fig_tasks, use_container_width=True)
+                                st.caption(f"Note: Weight percentage is relative to {selected_pic}'s total assigned workload.", text_alignment='center')
+                            else:
+                                st.warning(f"No tasks found for {selected_pic}")          
+                                st.markdown("---")
+                        
+                        # === COLLABORATION TABLE ===
+                        st.subheader(f"🤝 Collaboration Partners")
+                        
+                        # Build collaboration table by working with calc_df directly
+                        collab_data = []
+                        
+                        for idx, row in pic_tasks.iterrows():
+                            uraian = row['Uraian']
+                            
+                            # Create matching key
+                            match_key = (
+                                row['Standar'], 
+                                row['SubStandar'] if pd.notna(row['SubStandar']) else '',
+                                row['Item'] if pd.notna(row['Item']) else '',
+                                uraian
+                            )
+                            
+                            # Find matching row in calc_df (which has the original PIC column)
+                            calc_df_match = calc_df[
+                                (calc_df['Standar'] == match_key[0]) & 
+                                (calc_df['SubStandar'].fillna('') == match_key[1]) & 
+                                (calc_df['Item'].fillna('') == match_key[2]) &
+                                (calc_df['Uraian'] == match_key[3])
+                            ]
+                            
+                            if not calc_df_match.empty:
+                                # Get the original PIC string
+                                original_pic_string = calc_df_match.iloc[0]['PIC']
+                                
+                                # Parse all PICs from the original string
+                                if pd.notna(original_pic_string) and str(original_pic_string).strip():
+                                    all_pics = [p.strip() for p in str(original_pic_string).split(',') if p.strip()]
+                                    
+                                    # Remove the selected PIC to show only collaborators
+                                    other_pics = [p for p in all_pics if p != selected_pic]
+                                    
+                                    if other_pics:
+                                        collab_data.append({
+                                            'Uraian': uraian,
+                                            'Other PICs': ', '.join(other_pics)
+                                        })
+                                    else:
+                                        # Solo task
+                                        collab_data.append({
+                                            'Uraian': uraian,
+                                            'Other PICs': '—'
+                                        })
+                                else:
+                                    collab_data.append({
+                                        'Uraian': uraian,
+                                        'Other PICs': '—'
+                                    })
+                            else:
+                                # Fallback if no match found
+                                collab_data.append({
+                                    'Uraian': uraian,
+                                    'Other PICs': 'N/A'
+                                })
+                        
+                        if collab_data:
+                            collab_df = pd.DataFrame(collab_data)
+                            collab_df.insert(0, 'No.', range(1, len(collab_df) + 1))
+                            
+                            # Show table with custom column widths
+                            st.dataframe(
+                                collab_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'No.': st.column_config.NumberColumn(
+                                        'No.',
+                                        width= "1"
 
+                                    ),
+                                    'Uraian': st.column_config.TextColumn(
+                                        'Task Description',
+                                        width='8'
+                                    ),
+                                    'Other PICs': st.column_config.TextColumn(
+                                        'Collaboration Partners',
+                                        width='4'
+                                    )
+                                }
+                            )
+                            
+                            # Summary stats
+                            solo_tasks = len([d for d in collab_data if d['Other PICs'] == '—'])
+                            collab_tasks = len(collab_data) - solo_tasks
+                            
+                            col_c1, col_c2, col_c3 = st.columns([0.4, 0.3, 0.3])
+                            with col_c1:
+                                st.download_button(
+                                    label="📥 Download Collaboration Data",
+                                    data=collab_df.to_csv(index=False),
+                                    file_name=f"collaboration_{selected_pic}.csv",
+                                    mime="text/csv",
+                                    help="Download this PIC's collaboration details as CSV"
+                                )
+                            with col_c2:
+                                st.metric("Solo Tasks", solo_tasks, help="Tasks assigned only to this PIC")
+                            with col_c3:
+                                st.metric("Collaborative Tasks", collab_tasks, help="Tasks requiring coordination with others")
+                        else:
+                            st.info("No collaboration data available for this PIC.")
+
+                    
+                    else:
+                        st.info("No PICs available to analyze.")
+                
+                else:
+                    st.info("No PIC assignments found. Assign PICs in the Configuration tab to see personal dashboards.")    
+    
             else:
                 st.info("Please upload data to generate weighted analytics.")
 

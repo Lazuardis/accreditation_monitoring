@@ -1,0 +1,44 @@
+﻿Standar,SubStandar,Item,Uraian,Bobot,PIC,Item Preseden/Referensi,Progress
+1,,,Identitas Pengusul,1.72,IKS,,0
+2,,,Identitas Tim Penyusun Dokumen Evalusasi Diri,1.72,IKS,,0
+3,,,Kata Pengantar,1.72,LAM,,0
+4,,,Ringkasan Eksekutif,1.72,PP,,0
+5,,,1. Pendahuluan,3.45,PP,,0
+,5.1,,A. Dasar Penyusunan,33,"LAM, PP, IKS",,0
+,5.2,,B. Tim Penyusun dan Tanggungjawabnya,33,"LAM, PP, IKS",,0
+,5.3,,C. Mekanisme Kerja Penyusunan Evaluasi Diri,34,"LAM, PP, IKS",,0
+6,,,DED - 2. Dokumen Evaluasi Diri,44.83,MSS,,0
+,6.1,,DED - A. Profil Unit Pengelola Program Studi,7.69,"LRN, SYN",,0
+,6.2,,DED - B1. Tata Pamong dan Tata Kelola,19.23,LAM,,0
+,6.2,6.2.1,DED - a. Tata Pamong,50,"LAM, UN, LRN",,0
+,6.2,6.2.2,DED - b. Tata Kelola,50,"LAM, UN, LRN",,0
+,6.3,,DED - B2. Pengelolaan Dosen dan Tenaga Kependidikan,11.54,NAR,,0
+,6.3,6.3.1,DED - a. Kecukupan dan Kualifikasi Dosen,25,"NAR, NGM, IKS, AM",,0
+,6.3,6.3.2,DED - b. Pengelolaan Dosen,25,"NAR, NGM, IKS, AM",,0
+,6.3,6.3.3,DED - c. Kecukupan dan Kualifikasi Tenaga Kependidikan,25,"NAR, NGM, IKS, LMS",,0
+,6.3,6.3.4,DED - d. Pengelolaan Tenaga Kependidikan,25,"NAR, NGM, IKS, LMS",,0
+,6.4,,"DED - B3. Keuangan, Sarana, dan Prasarana",11.54,SDC,,0
+,6.4,6.4.1,DED - a. Keuangan,50,"SDC, IKS, NGM, YHL",,0
+,6.4,6.4.2,DED - b. Sarana dan Prasarana,50,"SDC, IKS, NGM, YHL",,0
+,6.5,,DED - B4. Pendidikan dan Pengajaran,19.23,PP,,0
+,6.5,6.5.1,DED - a. Kurikulum,50,"PP, FI",,0
+,6.5,6.5.2,DED - b. Jaminan Pembelajaran,50,"PP, FI",,0
+,6.6,,DED - B5. Penelitian dan Pengabdian kepada Masyarakat,19.23,PS,,0
+,6.6,6.6.1,DED - a. Penelitian,50,"PS, GWB, SYN, HA",,0
+,6.6,6.6.2,DED - b. Pengabdian kepada Masyarakat,50,"PS, GWB, SYN, HA",,0
+,6.7,,"DED - C. Analisis, Strategi Pengembangan dan Keberlanjutan UPPS",11.54,"PS, GWB, SYN, HA",,0
+,6.7,6.7.1,DED - a. STP,50,MSS,,0
+,6.7,6.7.2,DED - b. SWOT,50,MSS,,0
+7,,,DED - 3. Penutup,1.72,"UN, LAM",,0
+8,,,DKPS - Data Dosen dan Tenaga Kependidikan,32.76,LMS,,0
+,8.1,,DKPS - Tabel 1 Profil Dosen Berdasarkan Status Kepegawaian ,10.53,"LRN, FI",,0
+,8.2,,DKPS - Tabel 2 Profil Dosen Berdasarkan Latar Belakang Keahlian ,10.53,PP,,0
+,8.3,,DKPS - Tabel 3a Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"SYN, NAR, NGM",,0
+,8.4,,DKPS - Tabel 3b Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"SYN, NAR, NGM",,0
+,8.5,,DKPS - Tabel 4 Ekuivalen Waktu Mengajar Penuh (EWMP) ,15.79,LAM,,0
+,8.6,,DKPS - Tabel 5 Profil Tenaga Kependidikan,10.53,LMS,,0
+9,,,DKPS - Data Keuangan,3.45,YHL,,0
+,9.1,,DKPS - Tabel 6 Profil Keuangan Program Studi yang Diakreditasi,100,"SDC, YHL",,0
+10,,,DKPS - Data Mahasiswa,6.9,AM,,0
+,10.1,,DKPS - Tabel 7 Data Jumlah Mahasiswa Aktif,25,MRI,,0
+,10.2,,DKPS - Tabel 8 Luaran Penelitian/PkM yang dihasilkan Dosen,75,MRI,,0

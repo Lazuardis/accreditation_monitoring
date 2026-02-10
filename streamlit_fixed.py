@@ -859,14 +859,12 @@ def main():
 
                             # --- ROBUST HIERARCHY CLEANING (Fix for 'Non-leaves rows' error) ---
                             # 1. Uniformly treat all empty representations as None
-                            def clean_val(x):
-                                if x is None or pd.isna(x) or str(x).strip() == "" or str(x).lower() == "nan":
-                                    return None
-                                return str(x).strip()
-
                             for col in ['Standar', 'SubStandar', 'Item']:
                                 if col in sun_df.columns:
-                                    sun_df[col] = sun_df[col].apply(clean_val)
+                                     # Replace empty strings, "nan", etc. with None
+                                     sun_df[col] = sun_df[col].replace({"": None, "nan": None, "None": None})
+                                     # Ensure actual NaNs are None
+                                     sun_df[col] = sun_df[col].where(pd.notnull(sun_df[col]), None)
 
                             # 2. Re-identify parents with robust logic
                             # Parent Standar: A Standar that has children (SubStandar is not None)
@@ -908,17 +906,14 @@ def main():
                         print("Unique Item values:", sun_df['Item'].unique(), flush=True)
                         # --- DEBUG INJECTION END ---
 
-                        # st.dataframe(df)
+                        # st.dataframe(sun_df)
 
                         fig = px.sunburst(
                             sun_df,
-                            path=['Standar'],
+                            path=['Standar', 'SubStandar', 'Item'],
                             values='Value',
-                            
                         
                         )
-
-                        
                         fig.update_traces(hovertemplate="<b>%{label}</b><br>Weight: %{value:.4f}%<extra></extra>")
                         st.plotly_chart(fig, use_container_width=True)
 

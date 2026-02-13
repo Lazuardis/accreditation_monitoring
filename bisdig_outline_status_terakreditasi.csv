@@ -7,7 +7,7 @@ Standar,SubStandar,Item,Uraian,Bobot,PIC,Item Preseden/Referensi,Progress
 ,5.1,,DED - A. Dasar Penyusunan,33,"PS, IKS",,0
 ,5.2,,DED - B. Tim Penyusun dan Tanggungjawabnya,33,"PS, IKS",,0
 ,5.3,,DED - C. Mekanisme Kerja Penyusunan Evaluasi Diri,34,"PS, IKS",,0
-6,,,DED - 2. Dokumen Evaluasi Diri,44.83,,,0
+6,,,DED - 2. Dokumen Evaluasi Diri,44.83,LAM,,0
 ,6.1,,DED - A. Profil Unit Pengelola Program Studi,7.69,"LRN, SYN",,0
 ,6.2,,DED - B1. Tata Pamong dan Tata Kelola,19.23,LAM,,0
 ,6.2,6.2.1,DED - a. Tata Pamong,50,"LAM, UN, MRI",,0
@@ -23,10 +23,10 @@ Standar,SubStandar,Item,Uraian,Bobot,PIC,Item Preseden/Referensi,Progress
 ,6.5,,DED - B4. Pendidikan dan Pengajaran,19.23,PP,,0
 ,6.5,6.5.1,DED - a. Kurikulum,50,"PP, FI",,0
 ,6.5,6.5.2,DED - b. Jaminan Pembelajaran,50,"PP, FI",,0
-,6.6,,DED - B5. Penelitian dan Pengabdian kepada Masyarakat,19.23,PS,,0
+,6.6,,DED - B5. Penelitian dan Pengabdian kepada Masyarakat,19.23,MSS,,0
 ,6.6,6.6.1,DED - a. Penelitian,50,"MSS, GWB, SYN, HA",,0
 ,6.6,6.6.2,DED - b. Pengabdian kepada Masyarakat,50,"MSS, GWB, SYN, HA",,0
-,6.7,,"DED - C. Analisis, Strategi Pengembangan dan Keberlanjutan UPPS",11.54,"MSS, PS, MRI",,0
+,6.7,,"DED - C. Analisis, Strategi Pengembangan dan Keberlanjutan UPPS",11.54,MSS,,0
 ,6.7,6.7.1,DED - a. STP,50,"MSS, PS, MRI",,0
 ,6.7,6.7.2,DED - b. SWOT,50,"MSS, PS, MRI",,0
 7,,,DED - 3. Penutup,1.72,NAR,,0

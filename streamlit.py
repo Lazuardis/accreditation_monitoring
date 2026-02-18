@@ -80,6 +80,8 @@ def main():
 
     with tab1:
 
+    
+
         # 1. Sidebar Controls
         st.sidebar.header("Controls")
         if st.sidebar.button("🔄 Reset App & Data", use_container_width=True):
@@ -145,160 +147,166 @@ def main():
 
             df = st.session_state.df
 
-            # --- 1. DOCUMENT HIERARCHY ---
-            st.subheader("1. Document Hierarchy")
-            
-            col_t1, col_t2 = st.columns(2)
-            with col_t1: show_line = st.toggle("Show Hierarchy Lines", value=True)
-            with col_t2: expand_all = st.toggle("Expand All", value=True)
+            col1, col2 = st.columns([5,4])
 
-            # RECTIFIED RESET LOGIC: Changing the key forces the tree to reset
-            if st.button("Back to Global View", key="reset_tree_btn"):
-                st.session_state.current_selection = None
-                st.session_state.tree_key += 1 # Nuclear reset of the tree widget
-                st.rerun()
+            with col1:
+
+                # --- 1. DOCUMENT HIERARCHY ---
+                st.subheader("1. Document Hierarchy")
+                
+                col_t1, col_t2 = st.columns(2)
+                with col_t1: show_line = st.toggle("Show Hierarchy Lines", value=True)
+                with col_t2: expand_all = st.toggle("Expand All", value=True)
+
+                # RECTIFIED RESET LOGIC: Changing the key forces the tree to reset
+                if st.button("Back to Global View", key="reset_tree_btn"):
+                    st.session_state.current_selection = None
+                    st.session_state.tree_key += 1 # Nuclear reset of the tree widget
+                    st.rerun()
 
 
 
-            tree_data = build_tree_data(df)
-            
-            # Draw the tree with a dynamic key
-            tree_selection = sac.tree(
-                items=tree_data,
-                label='',
-                index=None,
-                show_line=show_line,
-                open_all=expand_all,
-                key=f"tree_widget_{st.session_state.tree_key}"
-            )
+                tree_data = build_tree_data(df)
+                
+                # Draw the tree with a dynamic key
+                tree_selection = sac.tree(
+                    items=tree_data,
+                    label='',
+                    index=None,
+                    show_line=show_line,
+                    open_all=expand_all,
+                    key=f"tree_widget_{st.session_state.tree_key}"
+                )
 
-            # Capture user selection from the tree
-            if tree_selection is not None:
-                st.session_state.current_selection = tree_selection
+                # Capture user selection from the tree
+                if tree_selection is not None:
+                    st.session_state.current_selection = tree_selection
 
-            st.divider()
+                st.divider()
 
-    # --- 2. WEIGHT ASSIGNMENT EDITOR ---
-            st.subheader("2. Weight Assignment Editor")
-            
-            with st.expander("Weight Settings", expanded=True):
-                display_df = pd.DataFrame()
-                level_description = ""
-                selected_node = st.session_state.current_selection
+            with col2:
 
-                if not selected_node:
-                    # LEVEL 1: GLOBAL
-                    mask = df['SubStandar'].isna() & df['Item'].isna()
-                    global_df = df[mask].copy()
-                    display_df = global_df.drop_duplicates(subset=['Standar'], keep='first')
-                    display_df['DisplayLabel'] = display_df['Standar'] + " - " + display_df['Uraian'].fillna("")
-                    level_description = "Global View: Assigning Weights to Main Chapters (BAB)"
-                else:
-                    sep = " | "
-                    # Extract the ID and ignore the suffix
-                    node_id = selected_node.split(sep)[0].strip()
-                    
-                    if node_id in df['Standar'].astype(str).values:
-                        mask = (df['Standar'] == node_id) & (df['SubStandar'].notna()) & (df['Item'].isna())
-                        display_df = df[mask].copy()
-                        display_df['DisplayLabel'] = display_df['SubStandar'].astype(str) + " " + display_df['Uraian'].fillna("")
-                        level_description = f"Sub-Sections under {node_id}"
-                    
-                    elif node_id in df['SubStandar'].astype(str).values:
-                        mask = (df['SubStandar'].astype(str) == node_id) & (df['Item'].notna())
-                        display_df = df[mask].copy()
-                        display_df['DisplayLabel'] = display_df['Item'].astype(str) + ": " + display_df['Uraian'].fillna("")
-                        level_description = f"Specific Items under Section {node_id}"
+        # --- 2. WEIGHT ASSIGNMENT EDITOR ---
+                st.subheader("2. Weight Assignment Editor")
+                
+                with st.expander("Weight Settings", expanded=True):
+                    display_df = pd.DataFrame()
+                    level_description = ""
+                    selected_node = st.session_state.current_selection
 
-                # --- RESTORED STATUS AND WARNING LOGIC ---
+                    if not selected_node:
+                        # LEVEL 1: GLOBAL
+                        mask = df['SubStandar'].isna() & df['Item'].isna()
+                        global_df = df[mask].copy()
+                        display_df = global_df.drop_duplicates(subset=['Standar'], keep='first')
+                        display_df['DisplayLabel'] = display_df['Standar'] + " - " + display_df['Uraian'].fillna("")
+                        level_description = "Global View: Assigning Weights to Main Chapters (BAB)"
+                    else:
+                        sep = " | "
+                        # Extract the ID and ignore the suffix
+                        node_id = selected_node.split(sep)[0].strip()
+                        
+                        if node_id in df['Standar'].astype(str).values:
+                            mask = (df['Standar'] == node_id) & (df['SubStandar'].notna()) & (df['Item'].isna())
+                            display_df = df[mask].copy()
+                            display_df['DisplayLabel'] = display_df['SubStandar'].astype(str) + " " + display_df['Uraian'].fillna("")
+                            level_description = f"Sub-Sections under {node_id}"
+                        
+                        elif node_id in df['SubStandar'].astype(str).values:
+                            mask = (df['SubStandar'].astype(str) == node_id) & (df['Item'].notna())
+                            display_df = df[mask].copy()
+                            display_df['DisplayLabel'] = display_df['Item'].astype(str) + ": " + display_df['Uraian'].fillna("")
+                            level_description = f"Specific Items under Section {node_id}"
+
+                    # --- RESTORED STATUS AND WARNING LOGIC ---
+                    if not display_df.empty:
+                        st.info(f"💡 {level_description}")
+                        
+                        edit_view = display_df[['DisplayLabel', 'Bobot']].copy()
+                        editor_key = f"weight_editor_{str(selected_node).split(' | ')[0] if selected_node else 'global'}"
+
+                        updated_table = st.data_editor(
+                            edit_view,
+                            column_config={
+                                "DisplayLabel": st.column_config.TextColumn("Section / Item Name", disabled=True),
+                                "Bobot": st.column_config.NumberColumn("Weight (%)", min_value=0.0, max_value=100.0, format="%.2f%%" )
+                            },
+                            hide_index=True,
+                            use_container_width=True,
+                            key=editor_key
+                        )
+
+                        # Restoration of Total Weight Validation
+                        total_bobot = float(updated_table['Bobot'].sum())
+                        
+                        if abs(total_bobot - 100.0) > 0.01:
+                            st.warning(f"⚠️ Total weight sum is {total_bobot:.2f}% — it should equal 100%. Please adjust before saving.")
+                        else:
+                            st.success("✅ Total weights sum to 100%. Ready to save.")
+
+                        if st.button("💾 Save Weights", key="save_weights_btn"):
+                            # Positional mapping to avoid IndexError
+                            for i in range(len(updated_table)):
+                                actual_index_in_master = display_df.index[i]
+                                new_bobot_value = updated_table.iloc[i]['Bobot']
+                                st.session_state.df.at[actual_index_in_master, 'Bobot'] = new_bobot_value
+                            
+                            st.toast("Progress saved to master data!", icon='💾')
+                            st.success(f"Weights for '{level_description}' successfully committed to memory.")
+                            st.rerun() 
+                    else:
+                        # Restoration of No Selection / Leaf Warning
+                        if selected_node:
+                            st.warning("📍 You have selected a leaf item. Weights are assigned to groups; please select a parent (Chapter or Sub-Section) in the tree above.")
+                        else:
+                            st.info("👈 Use the hierarchy tree to select a specific section, or edit Global Chapter weights below.")
+
+                # st.write(selected_node)
+
+                # --- 3. MEMBER TASK ASSIGNMENT ---
+                st.divider()
+                st.subheader("3. Member Task Assignment")
+
+                if 'members_df' not in st.session_state:
+                    st.session_state.members_df = pd.read_csv('list_dosen_tekdik.csv', dtype=str)
+
+                with st.expander("➕ Add New Member to Database"):
+                    new_mem = st.text_input("New Member Name")
+                    if st.button("Add Member"):
+                        if new_mem.strip():
+                            st.session_state.members_df = pd.concat([st.session_state.members_df, pd.DataFrame({'Name': [new_mem.strip()]})], ignore_index=True)
+                            st.session_state.members_df.to_csv('list_dosen_tekdik.csv', index=False)
+                            st.rerun()
+
                 if not display_df.empty:
-                    st.info(f"💡 {level_description}")
-                    
-                    edit_view = display_df[['DisplayLabel', 'Bobot']].copy()
-                    editor_key = f"weight_editor_{str(selected_node).split(' | ')[0] if selected_node else 'global'}"
+                    assignment_view = display_df[['DisplayLabel', 'PIC']].copy()
+                    # Convert string to list for multiselect
+                    assignment_view['PIC'] = assignment_view['PIC'].apply(lambda x: [i.strip() for i in str(x).split(',')] if (pd.notna(x) and x != "") else [])
 
-                    updated_table = st.data_editor(
-                        edit_view,
+                    pic_editor_key = f"pic_editor_{str(selected_node).split(' | ')[0] if selected_node else 'global'}"
+                    
+                    updated_pic_table = st.data_editor(
+                        assignment_view,
                         column_config={
                             "DisplayLabel": st.column_config.TextColumn("Section / Item Name", disabled=True),
-                            "Bobot": st.column_config.NumberColumn("Weight (%)", min_value=0.0, max_value=100.0, format="%.2f%%" )
+                            "PIC": st.column_config.MultiselectColumn("Assigned PICs", options=st.session_state.members_df['Name'].tolist())
                         },
                         hide_index=True,
                         use_container_width=True,
-                        key=editor_key
+                        key=pic_editor_key
                     )
 
-                    # Restoration of Total Weight Validation
-                    total_bobot = float(updated_table['Bobot'].sum())
-                    
-                    if abs(total_bobot - 100.0) > 0.01:
-                        st.warning(f"⚠️ Total weight sum is {total_bobot:.2f}% — it should equal 100%. Please adjust before saving.")
-                    else:
-                        st.success("✅ Total weights sum to 100%. Ready to save.")
-
-                    if st.button("💾 Save Weights", key="save_weights_btn"):
-                        # Positional mapping to avoid IndexError
-                        for i in range(len(updated_table)):
-                            actual_index_in_master = display_df.index[i]
-                            new_bobot_value = updated_table.iloc[i]['Bobot']
-                            st.session_state.df.at[actual_index_in_master, 'Bobot'] = new_bobot_value
+                    if st.button("💾 Save Assignments"):
+                        for i in range(len(updated_pic_table)):
+                            st.session_state.df.at[display_df.index[i], 'PIC'] = ", ".join(updated_pic_table.iloc[i]['PIC'])
                         
-                        st.toast("Progress saved to master data!", icon='💾')
-                        st.success(f"Weights for '{level_description}' successfully committed to memory.")
-                        st.rerun() 
-                else:
-                    # Restoration of No Selection / Leaf Warning
-                    if selected_node:
-                        st.warning("📍 You have selected a leaf item. Weights are assigned to groups; please select a parent (Chapter or Sub-Section) in the tree above.")
-                    else:
-                        st.info("👈 Use the hierarchy tree to select a specific section, or edit Global Chapter weights below.")
-
-            st.write(selected_node)
-
-            # --- 3. MEMBER TASK ASSIGNMENT ---
-            st.divider()
-            st.subheader("3. Member Task Assignment")
-
-            if 'members_df' not in st.session_state:
-                st.session_state.members_df = pd.read_csv('list_dosen_tekdik.csv', dtype=str)
-
-            with st.expander("➕ Add New Member to Database"):
-                new_mem = st.text_input("New Member Name")
-                if st.button("Add Member"):
-                    if new_mem.strip():
-                        st.session_state.members_df = pd.concat([st.session_state.members_df, pd.DataFrame({'Name': [new_mem.strip()]})], ignore_index=True)
-                        st.session_state.members_df.to_csv('list_dosen_tekdik.csv', index=False)
+                        # Save updated members to CSV
+                        
+                        
+                        st.success("Assignments saved!")
                         st.rerun()
 
-            if not display_df.empty:
-                assignment_view = display_df[['DisplayLabel', 'PIC']].copy()
-                # Convert string to list for multiselect
-                assignment_view['PIC'] = assignment_view['PIC'].apply(lambda x: [i.strip() for i in str(x).split(',')] if (pd.notna(x) and x != "") else [])
-
-                pic_editor_key = f"pic_editor_{str(selected_node).split(' | ')[0] if selected_node else 'global'}"
-                
-                updated_pic_table = st.data_editor(
-                    assignment_view,
-                    column_config={
-                        "DisplayLabel": st.column_config.TextColumn("Section / Item Name", disabled=True),
-                        "PIC": st.column_config.MultiselectColumn("Assigned PICs", options=st.session_state.members_df['Name'].tolist())
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key=pic_editor_key
-                )
-
-                if st.button("💾 Save Assignments"):
-                    for i in range(len(updated_pic_table)):
-                        st.session_state.df.at[display_df.index[i], 'PIC'] = ", ".join(updated_pic_table.iloc[i]['PIC'])
-                    
-                    # Save updated members to CSV
-                    
-                    
-                    st.success("Assignments saved!")
-                    st.rerun()
-
-            # st.dataframe(st.session_state.df, use_container_width=True)
+                # st.dataframe(st.session_state.df, use_container_width=True)
 
             
 

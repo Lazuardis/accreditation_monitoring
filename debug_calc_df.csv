@@ -31,14 +31,14 @@ Standar,SubStandar,Item,Uraian,Bobot,PIC,Item Preseden/Referensi,Progress,URL Li
 6,6.7,6.7.2,DED - b. SWOT,50.0,"MSS, PS, MRI",,0,,44.83,11.54,2.5866909999999996
 7,,,DED - 3. Penutup,1.72,NAR,,0,,1.72,,1.72
 8,,,DKPS - Data Dosen dan Tenaga Kependidikan,32.76,LMS,,0,,32.76,,32.76
-8,8.1,,DKPS - Tabel 1 Profil Dosen Berdasarkan Status Kepegawaian,10.53,"LRN, FI",,0,,32.76,10.53,3.4496279999999997
-8,8.2,,DKPS - Tabel 2 Profil Dosen Berdasarkan Latar Belakang Keahlian,10.53,MSS,,0,,32.76,10.53,3.4496279999999997
-8,8.3,,DKPS - Tabel 3a Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"NAR, PS, UN, SDC, NGM",,0,,32.76,26.32,8.622432
-8,8.4,,DKPS - Tabel 3b Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"NAR, PS, UN, SDC, NGM",,0,,32.76,26.32,8.622432
-8,8.5,,DKPS - Tabel 4 Ekuivalen Waktu Mengajar Penuh (EWMP),15.79,LAM,,0,,32.76,15.79,5.172804
-8,8.6,,DKPS - Tabel 5 Profil Tenaga Kependidikan,10.53,AM,,0,,32.76,10.53,3.4496279999999997
+8,8.1,,DKPS - Tabel 1 Profil Dosen Berdasarkan Status Kepegawaian,10.53,"LRN, FI",,80,,32.76,10.53,3.4496279999999997
+8,8.2,,DKPS - Tabel 2 Profil Dosen Berdasarkan Latar Belakang Keahlian,10.53,"MSS, PP",,100,,32.76,10.53,3.4496279999999997
+8,8.3,,DKPS - Tabel 3a Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"NAR, PS, UN, SDC, NGM",,80,,32.76,26.32,8.622432
+8,8.4,,DKPS - Tabel 3b Profil Dosen Berdasarkan Kontribusi Intelektual,26.32,"NAR, PS, UN, SDC, NGM",,80,,32.76,26.32,8.622432
+8,8.5,,DKPS - Tabel 4 Ekuivalen Waktu Mengajar Penuh (EWMP),15.79,LAM,,80,,32.76,15.79,5.172804
+8,8.6,,DKPS - Tabel 5 Profil Tenaga Kependidikan,10.53,AM,,100,,32.76,10.53,3.4496279999999997
 9,,,DKPS - Data Keuangan,3.45,YHL,,0,,3.45,,3.45
-9,9.1,,DKPS - Tabel 6 Profil Keuangan Program Studi yang Diakreditasi,100.0,"SDC, YHL",,0,,3.45,100.0,3.45
+9,9.1,,DKPS - Tabel 6 Profil Keuangan Program Studi yang Diakreditasi,100.0,"SDC, YHL",,60,,3.45,100.0,3.45
 10,,,DKPS - Data Mahasiswa,6.9,AM,,0,,6.9,,6.9
-10,10.1,,DKPS - Tabel 7 Data Jumlah Mahasiswa Aktif,25.0,MRI,,0,,6.9,25.0,1.725
-10,10.2,,DKPS - Tabel 8 Luaran Penelitian/PkM yang dihasilkan Dosen,75.0,"GWB, MSS, AM, ADH",,0,,6.9,75.0,5.175
+10,10.1,,DKPS - Tabel 7 Data Jumlah Mahasiswa Aktif,25.0,MRI,,100,,6.9,25.0,1.725
+10,10.2,,DKPS - Tabel 8 Luaran Penelitian/PkM yang dihasilkan Dosen,75.0,"GWB, MSS, AM, ADH",,80,,6.9,75.0,5.175

@@ -3,6 +3,11 @@ import pandas as pd
 import streamlit_antd_components as sac
 import plotly.express as px
 import io
+import difflib
+import re
+import os
+import json
+from datetime import datetime
 
 
 # Set page config
@@ -73,10 +78,672 @@ def convert_to_original_format(df):
 
     return export_df
 
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _result_payload(intent, status, answer_data=None, evidence_rows=None, formula_used=None, warnings=None):
+    return {
+        "intent": intent,
+        "status": status,
+        "answer_data": answer_data or {},
+        "evidence_rows": evidence_rows or [],
+        "formula_used": formula_used or [],
+        "as_of": _now_iso(),
+        "warnings": warnings or [],
+    }
+
+
+def _is_blank_series(series: pd.Series) -> pd.Series:
+    return series.isna() | (series.astype(str).str.strip() == "")
+
+
+def _split_pics(pic_value) -> list:
+    if pd.isna(pic_value):
+        return []
+    return [p.strip() for p in str(pic_value).split(",") if p and p.strip() and p.strip().lower() != "nan"]
+
+
+def prepare_chatbot_data(df: pd.DataFrame) -> dict:
+    """
+    Build normalized and derived dataframes used by chatbot handlers.
+    Mirrors analytics formulas used in the dashboard.
+    """
+    if df is None or df.empty:
+        return {
+            "status": "empty",
+            "error": "No data available.",
+            "raw_df": pd.DataFrame(),
+            "calc_df": pd.DataFrame(),
+            "leaf_df": pd.DataFrame(),
+            "pic_analysis": pd.DataFrame(),
+            "validation_issues": {},
+            "available_pics": [],
+        }
+
+    working_df = df.copy()
+
+    for col in ["Standar", "SubStandar", "Item", "Uraian", "PIC", "Item Preseden/Referensi", "URL Link"]:
+        if col not in working_df.columns:
+            working_df[col] = ""
+        working_df[col] = working_df[col].astype(str).str.strip()
+        working_df.loc[working_df[col].isin(["", "nan", "None"]), col] = pd.NA
+
+    if "Bobot" not in working_df.columns:
+        working_df["Bobot"] = 0
+    if "Progress" not in working_df.columns:
+        working_df["Progress"] = 0
+
+    raw_bobot = working_df["Bobot"].copy()
+    raw_progress = working_df["Progress"].copy()
+
+    working_df["Bobot"] = pd.to_numeric(working_df["Bobot"], errors="coerce")
+    working_df["Progress"] = pd.to_numeric(working_df["Progress"], errors="coerce")
+
+    invalid_bobot_mask = raw_bobot.notna() & working_df["Bobot"].isna()
+    invalid_progress_mask = raw_progress.notna() & working_df["Progress"].isna()
+    negative_bobot_mask = working_df["Bobot"].fillna(0) < 0
+    negative_progress_mask = working_df["Progress"].fillna(0) < 0
+    over_progress_mask = working_df["Progress"].fillna(0) > 100
+
+    working_df["Bobot"] = working_df["Bobot"].fillna(0.0)
+    working_df["Progress"] = working_df["Progress"].fillna(0.0).clip(lower=0.0, upper=100.0)
+
+    validation_issues = {
+        "Invalid weight values converted to 0": int(invalid_bobot_mask.sum()),
+        "Negative weight values found": int(negative_bobot_mask.sum()),
+        "Invalid progress values converted to 0": int(invalid_progress_mask.sum()),
+        "Negative progress values clamped to 0": int(negative_progress_mask.sum()),
+        "Progress values above 100 clamped to 100": int(over_progress_mask.sum()),
+    }
+
+    bab_mask = working_df["SubStandar"].isna() & working_df["Item"].isna() & working_df["Standar"].notna()
+    bab_weights = working_df.loc[bab_mask, ["Standar", "Bobot"]].copy().rename(columns={"Bobot": "Bab_Weight"})
+    bab_weights["Bab_Weight"] = pd.to_numeric(bab_weights["Bab_Weight"], errors="coerce")
+
+    sub_mask = working_df["SubStandar"].notna() & working_df["Item"].isna()
+    sub_weights = working_df.loc[sub_mask, ["Standar", "SubStandar", "Bobot"]].copy().rename(
+        columns={"Bobot": "Sub_Weight"}
+    )
+    sub_weights["Sub_Weight"] = pd.to_numeric(sub_weights["Sub_Weight"], errors="coerce")
+
+    calc_df = working_df.merge(bab_weights, on="Standar", how="left")
+    calc_df = calc_df.merge(sub_weights[["Standar", "SubStandar", "Sub_Weight"]], on=["Standar", "SubStandar"], how="left")
+
+    def calculate_net(row):
+        bw = 0.0 if pd.isna(row["Bab_Weight"]) else float(row["Bab_Weight"])
+        sw = 0.0 if pd.isna(row["Sub_Weight"]) else float(row["Sub_Weight"])
+        iw = 0.0 if pd.isna(row["Bobot"]) else float(row["Bobot"])
+
+        if pd.notna(row["Item"]):
+            return (bw * sw * iw) / 10000.0
+        if pd.notna(row["SubStandar"]):
+            return (bw * sw) / 100.0
+        return bw
+
+    calc_df["Net_Bobot"] = calc_df.apply(calculate_net, axis=1)
+
+    calc_df["PIC_Count"] = calc_df["PIC"].apply(lambda x: len(_split_pics(x)))
+    calc_df["Net_Bobot_Per_PIC"] = calc_df.apply(
+        lambda r: (r["Net_Bobot"] / r["PIC_Count"]) if r["PIC_Count"] > 0 else r["Net_Bobot"],
+        axis=1,
+    )
+
+    sub_with_items = calc_df[calc_df["Item"].notna()]["SubStandar"].unique()
+    standar_with_subs = calc_df[calc_df["SubStandar"].notna()]["Standar"].unique()
+
+    leaf_mask = (
+        (calc_df["Item"].notna())
+        | (calc_df["SubStandar"].notna() & calc_df["Item"].isna() & ~calc_df["SubStandar"].isin(sub_with_items))
+        | (
+            calc_df["Standar"].notna()
+            & calc_df["SubStandar"].isna()
+            & calc_df["Item"].isna()
+            & ~calc_df["Standar"].isin(standar_with_subs)
+        )
+    )
+    leaf_df = calc_df[leaf_mask].copy()
+
+    pic_master = leaf_df[leaf_df["PIC"].fillna("").astype(str).str.strip() != ""].copy()
+    if not pic_master.empty:
+        pic_master["PIC"] = pic_master["PIC"].str.split(",")
+        pic_analysis = pic_master.explode("PIC")
+        pic_analysis["PIC"] = pic_analysis["PIC"].astype(str).str.strip()
+        pic_analysis = pic_analysis[pic_analysis["PIC"] != ""].copy()
+    else:
+        pic_analysis = pd.DataFrame(columns=list(leaf_df.columns))
+
+    available_pics = sorted(pic_analysis["PIC"].dropna().unique().tolist()) if not pic_analysis.empty else []
+
+    return {
+        "status": "ok",
+        "raw_df": working_df,
+        "calc_df": calc_df,
+        "leaf_df": leaf_df,
+        "pic_analysis": pic_analysis,
+        "validation_issues": validation_issues,
+        "available_pics": available_pics,
+    }
+
+
+def normalize_pic(raw_pic: str, available_pics: list, pic_aliases: dict | None = None) -> dict:
+    if not raw_pic or not str(raw_pic).strip():
+        return {"ok": False, "error": "PIC is required.", "candidates": available_pics[:5]}
+
+    pic_aliases = pic_aliases or {}
+    normalized_input = str(raw_pic).strip().upper()
+
+    if normalized_input in pic_aliases:
+        normalized_input = str(pic_aliases[normalized_input]).strip().upper()
+
+    canonical = {str(p).strip().upper(): str(p).strip() for p in available_pics}
+    if normalized_input in canonical:
+        return {"ok": True, "pic": canonical[normalized_input], "candidates": []}
+
+    close_keys = difflib.get_close_matches(normalized_input, list(canonical.keys()), n=3, cutoff=0.7)
+    candidates = [canonical[k] for k in close_keys]
+    return {
+        "ok": False,
+        "error": f"PIC '{raw_pic}' not found.",
+        "candidates": candidates,
+    }
+
+
+def handle_overall_progress_by_pic(pic: str, prepared_data: dict) -> dict:
+    intent = "overall_progress_by_pic"
+    pic_analysis = prepared_data.get("pic_analysis", pd.DataFrame())
+    if pic_analysis.empty:
+        return _result_payload(intent, "empty", warnings=["No PIC assignments found in current data."])
+
+    pic_rows = pic_analysis[pic_analysis["PIC"] == pic].copy()
+    if pic_rows.empty:
+        return _result_payload(intent, "empty", warnings=[f"No task rows found for PIC '{pic}'."])
+
+    planned = float(pic_rows["Net_Bobot_Per_PIC"].sum())
+    if planned > 0:
+        avg_progress = float((pic_rows["Progress"] * pic_rows["Net_Bobot_Per_PIC"]).sum() / planned)
+    else:
+        avg_progress = 0.0
+    actual = planned * avg_progress / 100.0
+
+    evidence_cols = ["Standar", "SubStandar", "Item", "Uraian", "Progress", "Net_Bobot_Per_PIC"]
+    if "URL Link" in pic_rows.columns:
+        evidence_cols.append("URL Link")
+    evidence_rows = pic_rows[evidence_cols].head(20).to_dict("records")
+
+    return _result_payload(
+        intent,
+        "ok",
+        answer_data={
+            "pic": pic,
+            "planned_responsibility_pct": round(planned, 4),
+            "weighted_avg_progress_pct": round(avg_progress, 4),
+            "actual_progress_share_pct": round(actual, 4),
+            "task_count": int(len(pic_rows)),
+        },
+        evidence_rows=evidence_rows,
+        formula_used=[
+            "planned_responsibility_pct = sum(Net_Bobot_Per_PIC)",
+            "weighted_avg_progress_pct = sum(Progress * Net_Bobot_Per_PIC) / sum(Net_Bobot_Per_PIC)",
+            "actual_progress_share_pct = planned_responsibility_pct * weighted_avg_progress_pct / 100",
+        ],
+    )
+
+
+def handle_tasks_by_pic(pic: str, prepared_data: dict) -> dict:
+    intent = "tasks_by_pic"
+    pic_analysis = prepared_data.get("pic_analysis", pd.DataFrame())
+    if pic_analysis.empty:
+        return _result_payload(intent, "empty", warnings=["No PIC assignments found in current data."])
+
+    pic_rows = pic_analysis[pic_analysis["PIC"] == pic].copy()
+    if pic_rows.empty:
+        return _result_payload(intent, "empty", warnings=[f"No tasks found for PIC '{pic}'."])
+
+    total_weight = float(pic_rows["Net_Bobot_Per_PIC"].sum())
+    if total_weight > 0:
+        pic_rows["Relative_Weight"] = (pic_rows["Net_Bobot_Per_PIC"] / total_weight) * 100.0
+    else:
+        pic_rows["Relative_Weight"] = 0.0
+
+    base_cols = ["Standar", "SubStandar", "Item", "Uraian", "Progress", "Net_Bobot_Per_PIC", "Relative_Weight"]
+    if "URL Link" in pic_rows.columns:
+        base_cols.append("URL Link")
+
+    tasks_df = pic_rows[base_cols].sort_values(["Progress", "Relative_Weight"], ascending=[True, False])
+    evidence_rows = tasks_df.head(50).to_dict("records")
+
+    return _result_payload(
+        intent,
+        "ok",
+        answer_data={
+            "pic": pic,
+            "task_count": int(len(tasks_df)),
+            "total_responsibility_pct": round(total_weight, 4),
+        },
+        evidence_rows=evidence_rows,
+        formula_used=[
+            "Relative_Weight = Net_Bobot_Per_PIC / sum(Net_Bobot_Per_PIC for selected PIC) * 100",
+        ],
+    )
+
+
+def handle_stalled_tasks_by_pic(pic: str, prepared_data: dict, threshold: float = 0.0) -> dict:
+    intent = "stalled_tasks_by_pic"
+    pic_analysis = prepared_data.get("pic_analysis", pd.DataFrame())
+    if pic_analysis.empty:
+        return _result_payload(intent, "empty", warnings=["No PIC assignments found in current data."])
+
+    pic_rows = pic_analysis[pic_analysis["PIC"] == pic].copy()
+    if pic_rows.empty:
+        return _result_payload(intent, "empty", warnings=[f"No tasks found for PIC '{pic}'."])
+
+    stalled_df = pic_rows[pic_rows["Progress"] <= threshold].copy()
+    total_weight = float(pic_rows["Net_Bobot_Per_PIC"].sum())
+    stalled_weight = float(stalled_df["Net_Bobot_Per_PIC"].sum()) if not stalled_df.empty else 0.0
+    impacted_workload = (stalled_weight / total_weight * 100.0) if total_weight > 0 else 0.0
+
+    evidence_cols = ["Standar", "SubStandar", "Item", "Uraian", "Progress", "Net_Bobot_Per_PIC"]
+    if "URL Link" in stalled_df.columns:
+        evidence_cols.append("URL Link")
+    evidence_rows = stalled_df[evidence_cols].sort_values("Progress", ascending=True).head(50).to_dict("records")
+
+    status = "ok" if not stalled_df.empty else "empty"
+    return _result_payload(
+        intent,
+        status,
+        answer_data={
+            "pic": pic,
+            "threshold_pct": float(threshold),
+            "stalled_task_count": int(len(stalled_df)),
+            "total_task_count": int(len(pic_rows)),
+            "stalled_workload_pct": round(stalled_weight, 4),
+            "impacted_workload_within_pic_pct": round(impacted_workload, 4),
+        },
+        evidence_rows=evidence_rows,
+        formula_used=[
+            "stalled_task = Progress <= threshold_pct",
+            "impacted_workload_within_pic_pct = sum(Net_Bobot_Per_PIC stalled) / sum(Net_Bobot_Per_PIC all PIC tasks) * 100",
+        ],
+        warnings=[] if not stalled_df.empty else [f"No stalled tasks found for PIC '{pic}' at threshold <= {threshold}%."],
+    )
+
+
+def handle_collaboration_partners_by_pic(pic: str, prepared_data: dict) -> dict:
+    intent = "collaboration_partners_by_pic"
+    pic_analysis = prepared_data.get("pic_analysis", pd.DataFrame())
+    calc_df = prepared_data.get("calc_df", pd.DataFrame())
+    if pic_analysis.empty:
+        return _result_payload(intent, "empty", warnings=["No PIC assignments found in current data."])
+
+    pic_rows = pic_analysis[pic_analysis["PIC"] == pic].copy()
+    if pic_rows.empty:
+        return _result_payload(intent, "empty", warnings=[f"No tasks found for PIC '{pic}'."])
+
+    collab_records = []
+    for _, row in pic_rows.iterrows():
+        matched = calc_df[
+            (calc_df["Standar"] == row.get("Standar"))
+            & (calc_df["SubStandar"].fillna("") == (row.get("SubStandar") if pd.notna(row.get("SubStandar")) else ""))
+            & (calc_df["Item"].fillna("") == (row.get("Item") if pd.notna(row.get("Item")) else ""))
+            & (calc_df["Uraian"] == row.get("Uraian"))
+        ]
+        original_pic_string = matched.iloc[0]["PIC"] if not matched.empty else ""
+        all_pics = _split_pics(original_pic_string)
+        others = [p for p in all_pics if p != pic]
+        collab_records.append(
+            {
+                "Standar": row.get("Standar"),
+                "SubStandar": row.get("SubStandar"),
+                "Item": row.get("Item"),
+                "Uraian": row.get("Uraian"),
+                "Other PICs": ", ".join(others) if others else "-",
+            }
+        )
+
+    collab_df = pd.DataFrame(collab_records)
+    solo_tasks = int((collab_df["Other PICs"] == "-").sum()) if not collab_df.empty else 0
+    collaborative_tasks = int(len(collab_df) - solo_tasks)
+
+    return _result_payload(
+        intent,
+        "ok",
+        answer_data={
+            "pic": pic,
+            "task_count": int(len(collab_df)),
+            "solo_tasks": solo_tasks,
+            "collaborative_tasks": collaborative_tasks,
+        },
+        evidence_rows=collab_df.head(50).to_dict("records"),
+        formula_used=[
+            "Other PICs = assigned PIC list minus selected PIC",
+            "solo_tasks = count(Other PICs == '-')",
+        ],
+    )
+
+def handle_overall_status_summary(prepared_data: dict) -> dict:
+    intent = "overall_status_summary"
+    leaf_df = prepared_data.get("leaf_df", pd.DataFrame())
+    if leaf_df.empty:
+        return _result_payload(intent, "empty", warnings=["No leaf tasks found to summarize."])
+
+    total_progress = float((leaf_df["Progress"] * leaf_df["Net_Bobot"]).sum() / 100.0)
+    total_active_items = int(len(leaf_df))
+    weight_integrity = float(leaf_df["Net_Bobot"].sum())
+
+    evidence_cols = ["Standar", "SubStandar", "Item", "Uraian", "Progress", "Net_Bobot"]
+    evidence_rows = leaf_df[evidence_cols].head(20).to_dict("records")
+
+    return _result_payload(
+        intent,
+        "ok",
+        answer_data={
+            "overall_weighted_progress_pct": round(total_progress, 4),
+            "total_active_items": total_active_items,
+            "weight_integrity_pct": round(weight_integrity, 4),
+        },
+        evidence_rows=evidence_rows,
+        formula_used=[
+            "overall_weighted_progress_pct = sum(Progress * Net_Bobot) / 100",
+            "weight_integrity_pct = sum(Net_Bobot across leaf tasks)",
+        ],
+    )
+
+
+def handle_chapter_progress_summary(prepared_data: dict) -> dict:
+    intent = "chapter_progress_summary"
+    leaf_df = prepared_data.get("leaf_df", pd.DataFrame())
+    raw_df = prepared_data.get("raw_df", pd.DataFrame())
+    if leaf_df.empty:
+        return _result_payload(intent, "empty", warnings=["No leaf tasks found to summarize by chapter."])
+
+    chapter_names = raw_df[
+        raw_df["SubStandar"].isna() & raw_df["Item"].isna() & raw_df["Standar"].notna()
+    ][["Standar", "Uraian"]].copy()
+    chapter_names = chapter_names.rename(columns={"Uraian": "Standar_Name"})
+
+    chapter_stats = leaf_df.groupby("Standar").apply(
+        lambda x: (x["Progress"] * x["Net_Bobot"]).sum() / x["Net_Bobot"].sum() if x["Net_Bobot"].sum() > 0 else 0.0
+    ).reset_index(name="Completion (%)")
+    chapter_stats = chapter_stats.merge(chapter_names, on="Standar", how="left")
+    chapter_stats["Display_Label"] = chapter_stats["Standar"].astype(str) + ": " + chapter_stats["Standar_Name"].fillna("")
+    chapter_stats = chapter_stats.sort_values("Completion (%)", ascending=True)
+
+    return _result_payload(
+        intent,
+        "ok",
+        answer_data={
+            "chapter_count": int(len(chapter_stats)),
+        },
+        evidence_rows=chapter_stats.to_dict("records"),
+        formula_used=[
+            "chapter_completion_pct = sum(Progress * Net_Bobot) / sum(Net_Bobot) within each Standar",
+        ],
+    )
+
+
+CHAT_INTENTS = {
+    "overall_progress_by_pic",
+    "tasks_by_pic",
+    "stalled_tasks_by_pic",
+    "collaboration_partners_by_pic",
+    "overall_status_summary",
+    "chapter_progress_summary",
+}
+
+
+def _extract_pic_from_text(user_text: str, available_pics: list) -> str | None:
+    if not user_text or not available_pics:
+        return None
+    tokens = re.findall(r"[A-Za-z0-9_]+", user_text.upper())
+    token_set = set(tokens)
+    for pic in available_pics:
+        p = str(pic).strip()
+        if p and p.upper() in token_set:
+            return p
+    return None
+
+
+def route_intent(user_text: str, available_pics: list) -> dict:
+    text = (user_text or "").strip()
+    lower = text.lower()
+    pic_guess = _extract_pic_from_text(text, available_pics)
+
+    threshold = 0.0
+    if "20" in lower:
+        threshold = 20.0
+
+    stalled_keys = ["belum", "not progress", "stalled", "belum jalan", "belum progress", "belum progressed", "blocked"]
+    collab_keys = ["collab", "kolabor", "collabor", "dengan siapa", "with who", "partner"]
+    task_keys = ["task", "tugas", "responsible", "apa saja", "list"]
+    chapter_keys = ["chapter", "standar", "per chapter", "per standar", "bab"]
+    overall_keys = ["overall", "ringkasan", "summary", "status sekarang", "overall status"]
+    progress_keys = ["progress", "kemajuan", "progres"]
+
+    intent = "unsupported"
+    confidence = 0.45
+
+    if any(k in lower for k in collab_keys):
+        intent = "collaboration_partners_by_pic"
+        confidence = 0.9 if pic_guess else 0.75
+    elif any(k in lower for k in stalled_keys):
+        intent = "stalled_tasks_by_pic"
+        confidence = 0.9 if pic_guess else 0.75
+    elif any(k in lower for k in task_keys):
+        intent = "tasks_by_pic"
+        confidence = 0.9 if pic_guess else 0.75
+    elif any(k in lower for k in chapter_keys) and not pic_guess:
+        intent = "chapter_progress_summary"
+        confidence = 0.8
+    elif any(k in lower for k in overall_keys) and not pic_guess:
+        intent = "overall_status_summary"
+        confidence = 0.8
+    elif any(k in lower for k in progress_keys) and pic_guess:
+        intent = "overall_progress_by_pic"
+        confidence = 0.9
+    elif pic_guess:
+        intent = "tasks_by_pic"
+        confidence = 0.6
+
+    return {
+        "intent": intent,
+        "entities": {
+            "pic": pic_guess,
+            "threshold": threshold,
+        },
+        "confidence": confidence,
+        "notes": "",
+    }
+
+
+def run_chat_intent(user_text: str, prepared_data: dict, pic_aliases: dict | None = None) -> tuple[dict, dict]:
+    route = route_intent(user_text, prepared_data.get("available_pics", []))
+    intent = route["intent"]
+    entities = route["entities"]
+
+    if intent not in CHAT_INTENTS:
+        payload = _result_payload(
+            intent="unsupported",
+            status="error",
+            warnings=[
+                "Unsupported question type. Try one of: overall PIC progress, PIC tasks, stalled tasks, collaboration partners, overall status, chapter summary."
+            ],
+        )
+        return route, payload
+
+    if intent in {"overall_progress_by_pic", "tasks_by_pic", "stalled_tasks_by_pic", "collaboration_partners_by_pic"}:
+        norm = normalize_pic(entities.get("pic"), prepared_data.get("available_pics", []), pic_aliases=pic_aliases)
+        if not norm.get("ok"):
+            payload = _result_payload(
+                intent=intent,
+                status="error",
+                warnings=[norm.get("error", "PIC normalization failed.")],
+                answer_data={"candidates": norm.get("candidates", [])},
+            )
+            return route, payload
+        entities["pic"] = norm["pic"]
+
+    if intent == "overall_progress_by_pic":
+        payload = handle_overall_progress_by_pic(entities["pic"], prepared_data)
+    elif intent == "tasks_by_pic":
+        payload = handle_tasks_by_pic(entities["pic"], prepared_data)
+    elif intent == "stalled_tasks_by_pic":
+        payload = handle_stalled_tasks_by_pic(entities["pic"], prepared_data, threshold=float(entities.get("threshold", 0.0)))
+    elif intent == "collaboration_partners_by_pic":
+        payload = handle_collaboration_partners_by_pic(entities["pic"], prepared_data)
+    elif intent == "overall_status_summary":
+        payload = handle_overall_status_summary(prepared_data)
+    elif intent == "chapter_progress_summary":
+        payload = handle_chapter_progress_summary(prepared_data)
+    else:
+        payload = _result_payload(intent="unsupported", status="error", warnings=["No handler found."])
+
+    return route, payload
+
+
+def format_answer_plain(route: dict, payload: dict) -> str:
+    intent = payload.get("intent")
+    status = payload.get("status")
+    data = payload.get("answer_data", {})
+    warnings = payload.get("warnings", [])
+    as_of = payload.get("as_of", "")
+
+    if status in {"error", "empty"}:
+        lines = []
+        if warnings:
+            lines.extend([f"- {w}" for w in warnings])
+        if data.get("candidates"):
+            lines.append(f"- Did you mean: {', '.join(map(str, data['candidates']))}")
+        lines.append("- Supported examples: 'progress PIC NAR', 'tasks for LMS', 'stalled tasks for PS', 'collaboration for MRI', 'overall status', 'chapter summary'")
+        return "\n".join(lines)
+
+    if intent == "overall_progress_by_pic":
+        return (
+            f"PIC {data['pic']} has weighted average progress {data['weighted_avg_progress_pct']:.2f}% "
+            f"across {data['task_count']} tasks. Planned responsibility is {data['planned_responsibility_pct']:.2f}% "
+            f"and actual progress share is {data['actual_progress_share_pct']:.2f}% (as of {as_of})."
+        )
+
+    if intent == "tasks_by_pic":
+        return (
+            f"Found {data['task_count']} tasks for PIC {data['pic']} with total responsibility "
+            f"{data['total_responsibility_pct']:.2f}% (as of {as_of}). Check evidence table for task-level details."
+        )
+
+    if intent == "stalled_tasks_by_pic":
+        return (
+            f"PIC {data['pic']} has {data['stalled_task_count']} stalled tasks (threshold <= {data['threshold_pct']:.0f}%) "
+            f"out of {data['total_task_count']} tasks. Impacted workload within PIC scope is "
+            f"{data['impacted_workload_within_pic_pct']:.2f}% (as of {as_of})."
+        )
+
+    if intent == "collaboration_partners_by_pic":
+        return (
+            f"PIC {data['pic']} has {data['task_count']} tasks: {data['collaborative_tasks']} collaborative "
+            f"and {data['solo_tasks']} solo (as of {as_of}). Check evidence table for partner details."
+        )
+
+    if intent == "overall_status_summary":
+        return (
+            f"Overall weighted progress is {data['overall_weighted_progress_pct']:.2f}% across "
+            f"{data['total_active_items']} active items, with weight integrity {data['weight_integrity_pct']:.2f}% "
+            f"(as of {as_of})."
+        )
+
+    if intent == "chapter_progress_summary":
+        return (
+            f"Chapter summary generated for {data['chapter_count']} chapters (as of {as_of}). "
+            f"Check evidence table for completion percentages per chapter."
+        )
+
+    return "The request was processed, but no formatter matched this intent."
+
+
+def _get_gemini_api_key() -> str:
+    try:
+        secret_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        secret_key = ""
+    env_key = os.getenv("GEMINI_API_KEY", "")
+    return str(secret_key or env_key or "").strip()
+
+
+def format_answer_with_gemini(payload: dict, user_question: str, model_name: str = "gemini-2.0-flash") -> tuple[bool, str, str]:
+    """
+    Returns: (ok, text, message)
+    - ok=True: text is Gemini-formatted answer
+    - ok=False: text should be ignored, message explains fallback reason
+    """
+    api_key = _get_gemini_api_key()
+    if not api_key:
+        return False, "", "Gemini API key not found. Set GEMINI_API_KEY in Streamlit secrets or environment."
+
+    # Compact deterministic payload to constrain model output.
+    llm_payload = {
+        "intent": payload.get("intent"),
+        "status": payload.get("status"),
+        "answer_data": payload.get("answer_data", {}),
+        "warnings": payload.get("warnings", []),
+        "formula_used": payload.get("formula_used", []),
+        "as_of": payload.get("as_of"),
+        "evidence_rows": payload.get("evidence_rows", [])[:12],
+    }
+
+    system_instruction = (
+        "You are a structured data narrator. Use only the provided payload.\n"
+        "Rules:\n"
+        "1) Never change numeric values, names, or entities.\n"
+        "2) Never invent tasks, metrics, or collaborators.\n"
+        "3) If status is error/empty, explain clearly and briefly.\n"
+        "4) Keep response concise and practical for busy users.\n"
+        "5) Preserve user's language style when possible.\n"
+        "Output sections:\n"
+        "Summary\n"
+        "Key Points\n"
+        "Evidence\n"
+    )
+    user_prompt = (
+        f"User question:\n{user_question}\n\n"
+        f"Deterministic payload:\n{json.dumps(llm_payload, ensure_ascii=True)}\n\n"
+        "Write the final answer now."
+    )
+
+    # Preferred SDK: google-genai
+    try:
+        from google import genai  # type: ignore
+
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=[{"role": "user", "parts": [{"text": user_prompt}]}],
+            config={"system_instruction": system_instruction, "temperature": 0.2},
+        )
+        text = getattr(resp, "text", "") or ""
+        if text.strip():
+            return True, text.strip(), "Gemini formatting applied."
+    except Exception:
+        pass
+
+    # Fallback SDK: google-generativeai
+    try:
+        import google.generativeai as genai  # type: ignore
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+        resp = model.generate_content(user_prompt)
+        text = getattr(resp, "text", "") or ""
+        if text.strip():
+            return True, text.strip(), "Gemini formatting applied."
+    except Exception as e:
+        return False, "", f"Gemini formatting unavailable: {str(e)}"
+
+    return False, "", "Gemini returned empty output."
+
 def main():
     st.title("Accreditation Monitoring")
 
-    tab1, tab2, tab3 = st.tabs(["Configuration", "Task Tracker", "Analytics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Configuration", "Task Tracker", "Analytics", "Chat Assistant"])
 
     with tab1:
 
@@ -93,7 +760,7 @@ def main():
         # uploaded file automatically by accessing bisdig_outline_v1.csv
         if uploaded_file is None:
             try:
-                with open('bisdig_outline_status_terakreditasi.csv', 'rb') as f:
+                with open('data_akreditasi_updated(3).csv', 'rb') as f:
                     uploaded_file = io.BytesIO(f.read())
             except FileNotFoundError:
                 pass
@@ -618,7 +1285,7 @@ def main():
                             except Exception:
                                 current_val = 0
 
-                            options = [0, 25, 50, 75, 100]
+                            options = [0, 20, 40, 60, 80, 100]
                             default_ix = options.index(current_val) if current_val in options else 0
 
                             new_progress = st.selectbox(
@@ -696,7 +1363,37 @@ def main():
                 df = st.session_state.df.copy()
                 st.header("Accreditation Analytics Dashboard")
 
-                # st.dataframe(df)
+                planned_color = '#355CDE'
+                actual_color = '#1FA971'
+                neutral_color = '#8EA0B8'
+                progress_scale = ['#C0392B', '#F39C12', '#27AE60']
+
+                def style_figure(fig, *, x_title=None, y_title=None, show_legend=True):
+                    fig.update_layout(
+                        title=None,
+                        xaxis_title=x_title,
+                        yaxis_title=y_title,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        margin=dict(l=20, r=20, t=20, b=20),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        ) if show_legend else None
+                    )
+                    fig.update_xaxes(showgrid=True, gridcolor='rgba(142,160,184,0.18)', zeroline=False)
+                    fig.update_yaxes(showgrid=False, zeroline=False)
+                    return fig
+
+                # --- NEW: Chapter Reference Table ---
+                with st.expander("📖 Chapter Reference Lookup (Standar ID to Description)", expanded=False):
+                    # Get Standar names (Uraian from header rows)
+                    standar_lookup = df[df['SubStandar'].isna() & df['Item'].isna() & df['Standar'].notna()][['Standar', 'Uraian']]
+                    standar_lookup = standar_lookup.rename(columns={'Uraian': 'Chapter Description'}).sort_values('Standar')
+                    st.dataframe(standar_lookup, use_container_width=True, hide_index=True)
 
                 # --- 0) Normalize blanks properly (critical) ---
                 for c in ['Standar','SubStandar','Item','Uraian','PIC','Item Preseden/Referensi']:
@@ -704,7 +1401,42 @@ def main():
                         df[c] = df[c].astype(str).str.strip()
                         df.loc[df[c].isin(["", "nan", "None"]), c] = pd.NA
 
-                df['Bobot'] = pd.to_numeric(df.get('Bobot', 0), errors='coerce')
+                if 'Bobot' not in df.columns:
+                    df['Bobot'] = 0
+                if 'Progress' not in df.columns:
+                    df['Progress'] = 0
+
+                raw_bobot = df['Bobot'].copy()
+                raw_progress = df['Progress'].copy()
+
+                df['Bobot'] = pd.to_numeric(df['Bobot'], errors='coerce')
+                df['Progress'] = pd.to_numeric(df['Progress'], errors='coerce')
+
+                invalid_bobot_mask = raw_bobot.notna() & df['Bobot'].isna()
+                invalid_progress_mask = raw_progress.notna() & df['Progress'].isna()
+                negative_bobot_mask = df['Bobot'].fillna(0) < 0
+                negative_progress_mask = df['Progress'].fillna(0) < 0
+                over_progress_mask = df['Progress'].fillna(0) > 100
+
+                df['Bobot'] = df['Bobot'].fillna(0.0)
+                df['Progress'] = df['Progress'].fillna(0.0).clip(lower=0.0, upper=100.0)
+
+                validation_issues = {
+                    "Invalid weight values converted to 0": int(invalid_bobot_mask.sum()),
+                    "Negative weight values found": int(negative_bobot_mask.sum()),
+                    "Invalid progress values converted to 0": int(invalid_progress_mask.sum()),
+                    "Negative progress values clamped to 0": int(negative_progress_mask.sum()),
+                    "Progress values above 100 clamped to 100": int(over_progress_mask.sum()),
+                }
+
+                issue_total = sum(validation_issues.values())
+                if issue_total > 0:
+                    with st.expander("Data Validation Summary", expanded=False):
+                        st.warning("Some numeric fields needed cleanup before analytics were calculated.")
+                        validation_df = pd.DataFrame(
+                            [{"Issue": label, "Rows": count} for label, count in validation_issues.items() if count > 0]
+                        )
+                        st.dataframe(validation_df, use_container_width=True, hide_index=True)
 
                 # --- 1) BAB weights (Standar header rows only) ---
                 bab_mask = df['SubStandar'].isna() & df['Item'].isna() & df['Standar'].notna()
@@ -1007,25 +1739,62 @@ def main():
                     col_p1, col_p2 = st.columns(2)
                     with col_p1:
                         # Pie chart based on Net_Bobot (Real impact on the 100% total)
-                        fig_pie = px.pie(pic_analysis, values='Net_Bobot_Per_PIC', names='PIC', 
-                                       title="Global Responsibility (%)", hole=0.4)
+                        fig_pie = px.pie(
+                            pic_analysis,
+                            values='Net_Bobot_Per_PIC',
+                            names='PIC',
+                            hole=0.5,
+                            color_discrete_sequence=[planned_color, actual_color, '#F4B942', '#DD6B66', '#6C8EAD', '#7B6FD6']
+                        )
+                        fig_pie.update_traces(
+                            textposition='inside',
+                            textinfo='percent+label',
+                            hovertemplate="<b>%{label}</b><br>Responsibility: %{value:.2f}%<br>Share: %{percent}<extra></extra>"
+                        )
+                        style_figure(fig_pie, show_legend=False)
                         st.plotly_chart(fig_pie, use_container_width=True)
                     with col_p2:
                         # Bar chart for task counts
                         task_counts = pic_analysis['PIC'].value_counts().reset_index()
-                        fig_bar = px.bar(task_counts, x='PIC', y='count', title="Task Count per PIC", text_auto=True)
+                        task_counts.columns = ['PIC', 'Task Count']
+                        task_counts = task_counts.sort_values('Task Count', ascending=False)
+                        fig_bar = px.bar(
+                            task_counts,
+                            x='PIC',
+                            y='Task Count',
+                            text_auto=True,
+                            color_discrete_sequence=[neutral_color]
+                        )
+                        fig_bar.update_traces(
+                            hovertemplate="<b>%{x}</b><br>Task Count: %{y}<extra></extra>"
+                        )
+                        style_figure(fig_bar, x_title="PIC", y_title="Task Count", show_legend=False)
                         st.plotly_chart(fig_bar, use_container_width=True)
 
      
                 # --- 5. STANDAR PERFORMANCE ---
                 st.subheader("📂 Chapter Progress Summary")
+                
+                # Get Standar names (Uraian from header rows)
+                standar_names = df[df['SubStandar'].isna() & df['Item'].isna() & df['Standar'].notna()][['Standar', 'Uraian']]
+                standar_names = standar_names.rename(columns={'Uraian': 'Standar_Name'})
+                
                 standar_stats = leaf_df.groupby('Standar').apply(
                     lambda x: (x['Progress'] * x['Net_Bobot']).sum() / x['Net_Bobot'].sum() if x['Net_Bobot'].sum() > 0 else 0
                 ).reset_index()
                 standar_stats.columns = ['Standar', 'Completion (%)']
                 
-                fig_standar = px.bar(standar_stats, y='Standar', x='Completion (%)', orientation='h',
-                                   range_x=[0, 100], color='Completion (%)', color_continuous_scale='RdYlGn', text_auto='.2f')
+                # Merge names for display
+                standar_stats = standar_stats.merge(standar_names, on='Standar', how='left')
+                standar_stats['Display_Label'] = standar_stats['Standar'].astype(str) + ": " + standar_stats['Standar_Name'].fillna("")
+                standar_stats = standar_stats.sort_values('Completion (%)', ascending=True)
+                
+                fig_standar = px.bar(standar_stats, y='Display_Label', x='Completion (%)', orientation='h',
+                                   range_x=[0, 100], color='Completion (%)', color_continuous_scale=progress_scale, text_auto='.1f')
+                fig_standar.update_traces(
+                    hovertemplate="<b>%{y}</b><br>Completion: %{x:.1f}%<extra></extra>"
+                )
+                style_figure(fig_standar, x_title="Completion (%)", y_title="Chapter", show_legend=False)
                 st.plotly_chart(fig_standar, use_container_width=True)
 
 
@@ -1072,17 +1841,53 @@ def main():
                         y='Percentage',
                         color='Metric',
                         barmode='group',
-                        title="Planned Responsibility vs Actual Progress by PIC",
-                        text_auto='.2f'
+                        text_auto='.1f',
+                        color_discrete_map={
+                            'Planned Responsibility (%)': planned_color,
+                            'Actual Progress (%)': actual_color
+                        }
                     )
 
-                    fig_comparison.update_layout(yaxis_title="Percentage (%)", xaxis_title="PIC")
+                    fig_comparison.update_traces(
+                        hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:.1f}%<extra></extra>"
+                    )
+                    style_figure(fig_comparison, x_title="PIC", y_title="Percentage (%)")
                     st.plotly_chart(fig_comparison, use_container_width=True)
 
+                    # --- 7. PIC INDIVIDUAL COMPLETION RATE (New Chart) ---
+                    st.subheader("🎯 PIC Performance: Individual Completion Rate (%)")
+                    
+                    # Calculate the completion rate: (Actual Progress / Planned Responsibility) * 100
+                    # This is essentially the weighted average progress of tasks assigned to that PIC.
+                    pic_completion = pic_comparison.copy()
+                    pic_completion['Completion Rate (%)'] = (
+                        (pic_completion['Actual Progress (%)'] / pic_completion['Planned Responsibility (%)'] * 100)
+                        if not pic_completion.empty else 0
+                    ).fillna(0)
+
+                    # Sort for better visualization
+                    pic_completion = pic_completion.sort_values('Completion Rate (%)', ascending=True)
+
+                    fig_completion = px.bar(
+                        pic_completion,
+                        y='PIC',
+                        x='Completion Rate (%)',
+                        orientation='h',
+                        range_x=[0, 100],
+                        color='Completion Rate (%)',
+                        color_continuous_scale=progress_scale,
+                        text_auto='.1f'
+                    )
+                    
+                    fig_completion.update_traces(
+                        hovertemplate="<b>%{y}</b><br>Completion Rate: %{x:.1f}%<extra></extra>"
+                    )
+                    style_figure(fig_completion, x_title="Completion Rate (%)", y_title="PIC", show_legend=False)
+                    st.plotly_chart(fig_completion, use_container_width=True)
                     
                     # Optional: Show the data table
                     with st.expander("📋 View Detailed Numbers"):
-                        st.dataframe(pic_comparison, use_container_width=True, hide_index=True)
+                        st.dataframe(pic_completion, use_container_width=True, hide_index=True)
                 else:
                     st.info("No PIC assignments found. Assign PICs in the Configuration tab to see performance metrics.")
             
@@ -1199,29 +2004,22 @@ def main():
                                     orientation='h',
                                     text_auto='.1f',
                                     color_discrete_map={
-                                        'Planned Responsibility (%)': '#636EFA',
-                                        'Actual Progress (%)': '#00CC96'
+                                        'Planned Responsibility (%)': planned_color,
+                                        'Actual Progress (%)': actual_color
                                     }
                                 )
                                 
+                                fig_tasks.update_traces(
+                                    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:.1f}%<extra></extra>"
+                                )
+                                style_figure(fig_tasks, x_title="Percentage (%)", y_title="Task Description")
                                 fig_tasks.update_layout(
-                                    xaxis_title="Percentage (%)",
-                                    yaxis_title="Task Description",
-                                    height=max(400, len(chart_data) * 35),  # Dynamic height based on task count
-                                    showlegend=True,
-                                    legend=dict(
-                                        orientation="h",
-                                        yanchor="bottom",
-                                        y=1.02,
-                                        xanchor="right",
-                                        x=1
-                                    ),
-                                    # Wrap text on y-axis
-                                    yaxis=dict(
-                                        tickmode='linear',
-                                        automargin=True
-                                    ),
-                                    margin=dict(l=20, r=20, t=40, b=20)
+                                    height=max(400, len(chart_data) * 35)
+                                )
+                                fig_tasks.update_xaxes(range=[0, 100])
+                                fig_tasks.update_yaxes(
+                                    tickmode='linear',
+                                    automargin=True
                                 )
                                 
                                 st.plotly_chart(fig_tasks, use_container_width=True)
@@ -1345,5 +2143,116 @@ def main():
             else:
                 st.info("Please upload data to generate weighted analytics.")
 
+        with tab4:
+            st.header("Chat Assistant")
+            st.caption("Deterministic answers from current app data. Use questions about PIC progress, tasks, stalled work, collaboration, overall status, or chapter summary.")
+
+            if "df" not in st.session_state:
+                st.info("Please upload/load data first in Configuration tab.")
+            else:
+                prepared_data = prepare_chatbot_data(st.session_state.df)
+                if prepared_data.get("status") != "ok":
+                    st.warning(prepared_data.get("error", "Unable to prepare chatbot data."))
+                else:
+                    if "chat_history" not in st.session_state:
+                        st.session_state.chat_history = []
+                    if "chat_logs" not in st.session_state:
+                        st.session_state.chat_logs = []
+                    if "chat_last_payload" not in st.session_state:
+                        st.session_state.chat_last_payload = None
+                    if "chat_last_route" not in st.session_state:
+                        st.session_state.chat_last_route = None
+
+                    top_c1, top_c2 = st.columns([0.65, 0.35])
+                    with top_c1:
+                        st.markdown(
+                            f"Available PICs: `{', '.join(prepared_data.get('available_pics', [])[:20])}`"
+                            if prepared_data.get("available_pics")
+                            else "No PIC currently available."
+                        )
+                    with top_c2:
+                        use_gemini = True
+                        # use_gemini = st.toggle("Use Gemini Wording", value=False, key="chat_use_gemini")
+                        gemini_model = "gemini-2.0-flash"
+                        # gemini_model = st.text_input("Gemini Model", value="gemini-2.0-flash", key="chat_gemini_model")
+                        if st.button("Clear Chat", key="clear_chat_btn", use_container_width=True):
+                            st.session_state.chat_history = []
+                            st.session_state.chat_logs = []
+                            st.session_state.chat_last_payload = None
+                            st.session_state.chat_last_route = None
+                            st.rerun()
+
+                    for msg in st.session_state.chat_history:
+                        with st.chat_message(msg.get("role", "assistant")):
+                            st.markdown(msg.get("content", ""))
+
+                    user_text = st.chat_input("Ask: 'progress PIC NAR', 'tasks for LMS', 'stalled tasks for PS', 'collaboration for MRI', 'overall status'")
+                    if user_text:
+                        st.session_state.chat_history.append({"role": "user", "content": user_text})
+
+                        route, payload = run_chat_intent(user_text, prepared_data)
+                        answer_text = format_answer_plain(route, payload)
+                        formatting_mode = "plain"
+                        formatting_note = ""
+                        if use_gemini:
+                            ok, gemini_text, gemini_msg = format_answer_with_gemini(
+                                payload=payload,
+                                user_question=user_text,
+                                model_name=(gemini_model or "gemini-2.0-flash").strip(),
+                            )
+                            if ok and gemini_text:
+                                answer_text = gemini_text
+                                formatting_mode = "gemini"
+                                formatting_note = gemini_msg
+                            else:
+                                formatting_note = f"Fallback to plain formatting: {gemini_msg}"
+
+                        st.session_state.chat_last_route = route
+                        st.session_state.chat_last_payload = payload
+                        st.session_state.chat_history.append({"role": "assistant", "content": answer_text})
+                        st.session_state.chat_logs.append(
+                            {
+                                "timestamp": _now_iso(),
+                                "query": user_text,
+                                "intent": route.get("intent"),
+                                "entities": str(route.get("entities", {})),
+                                "status": payload.get("status"),
+                                "formatting_mode": formatting_mode,
+                                "formatting_note": formatting_note,
+                            }
+                        )
+                        st.rerun()
+
+                    if st.session_state.chat_last_payload:
+                        payload = st.session_state.chat_last_payload
+                        route = st.session_state.chat_last_route or {}
+                        with st.expander("Latest Execution Details", expanded=True):
+                            # st.write(
+                            #     {
+                            #         "intent": route.get("intent"),
+                            #         "confidence": route.get("confidence"),
+                            #         "entities": route.get("entities"),
+                            #         "status": payload.get("status"),
+                            #         "as_of": payload.get("as_of"),
+                            #         "warnings": payload.get("warnings"),
+                            #         "formatting_mode": (
+                            #             st.session_state.chat_logs[-1].get("formatting_mode")
+                            #             if st.session_state.chat_logs
+                            #             else "plain"
+                            #         ),
+                            #         "formatting_note": (
+                            #             st.session_state.chat_logs[-1].get("formatting_note")
+                            #             if st.session_state.chat_logs
+                            #             else ""
+                            #         ),
+                            #     }
+                            # )
+                            evidence_rows = payload.get("evidence_rows", [])
+                            if evidence_rows:
+                                st.dataframe(pd.DataFrame(evidence_rows), use_container_width=True, hide_index=True)
+                            else:
+                                st.caption("No evidence rows for this response.")
+
 if __name__ == "__main__":
     main()
+

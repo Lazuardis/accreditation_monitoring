@@ -760,7 +760,7 @@ def main():
         # uploaded file automatically by accessing bisdig_outline_v1.csv
         if uploaded_file is None:
             try:
-                with open('data_akreditasi_updated(3).csv', 'rb') as f:
+                with open('data_akreditasi_updated(4).csv', 'rb') as f:
                     uploaded_file = io.BytesIO(f.read())
             except FileNotFoundError:
                 pass
@@ -1285,7 +1285,7 @@ def main():
                             except Exception:
                                 current_val = 0
 
-                            options = [0, 20, 40, 60, 80, 100]
+                            options = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
                             default_ix = options.index(current_val) if current_val in options else 0
 
                             new_progress = st.selectbox(

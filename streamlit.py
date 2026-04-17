@@ -2,12 +2,23 @@ import streamlit as st
 import pandas as pd
 import streamlit_antd_components as sac
 import plotly.express as px
+import plotly.io as pio
 import io
 import difflib
 import re
 import os
 import json
 from datetime import datetime
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 
 # Set page config
@@ -103,6 +114,315 @@ def _split_pics(pic_value) -> list:
     if pd.isna(pic_value):
         return []
     return [p.strip() for p in str(pic_value).split(",") if p and p.strip() and p.strip().lower() != "nan"]
+
+
+def style_analytics_figure(
+    fig,
+    *,
+    x_title=None,
+    y_title=None,
+    show_legend=True,
+    height=None,
+    font_size=None,
+    margin_left=20,
+    margin_right=20,
+    margin_top=20,
+    margin_bottom=20,
+):
+    fig.update_layout(
+        title=None,
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='white',
+        margin=dict(l=margin_left, r=margin_right, t=margin_top, b=margin_bottom),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ) if show_legend else None,
+    )
+    if height is not None:
+        fig.update_layout(height=height)
+    if font_size is not None:
+        fig.update_layout(font=dict(size=font_size))
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(142,160,184,0.18)', zeroline=False)
+    fig.update_yaxes(showgrid=False, zeroline=False)
+    return fig
+
+
+def truncate_text(text, max_length=60):
+    text_str = str(text)
+    if len(text_str) <= max_length:
+        return text_str
+    return text_str[:max_length - 3] + "..."
+
+
+def build_chapter_progress_figure(standar_stats, progress_scale, *, for_pdf=False):
+    chart_df = standar_stats.copy()
+    if for_pdf:
+        chart_df['Display_Label'] = chart_df['Display_Label'].apply(lambda x: truncate_text(x, 52))
+
+    fig = px.bar(
+        chart_df,
+        y='Display_Label',
+        x='Completion (%)',
+        orientation='h',
+        range_x=[0, 100],
+        color='Completion (%)',
+        color_continuous_scale=progress_scale,
+        text_auto='.1f'
+    )
+    fig.update_traces(
+        hovertemplate="<b>%{y}</b><br>Completion: %{x:.1f}%<extra></extra>"
+    )
+    style_analytics_figure(
+        fig,
+        x_title="Completion (%)",
+        y_title="Chapter",
+        show_legend=False,
+        height=360 if for_pdf else None,
+        font_size=10 if for_pdf else None,
+        margin_left=180 if for_pdf else 20,
+        margin_right=28 if for_pdf else 20,
+    )
+    return fig
+
+
+def build_pic_planned_vs_actual_figure(plot_data, planned_color, actual_color, *, for_pdf=False):
+    fig = px.bar(
+        plot_data,
+        x='PIC',
+        y='Percentage',
+        color='Metric',
+        barmode='group',
+        text_auto='.1f',
+        color_discrete_map={
+            'Planned Responsibility (%)': planned_color,
+            'Actual Progress (%)': actual_color
+        }
+    )
+    fig.update_traces(
+        hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:.1f}%<extra></extra>"
+    )
+    style_analytics_figure(
+        fig,
+        x_title="PIC",
+        y_title="Percentage (%)",
+        height=230 if for_pdf else None,
+        font_size=9 if for_pdf else None,
+        margin_left=42 if for_pdf else 20,
+        margin_right=28 if for_pdf else 20,
+    )
+    return fig
+
+
+def build_pic_completion_rate_figure(pic_completion, progress_scale, *, for_pdf=False):
+    fig = px.bar(
+        pic_completion,
+        y='PIC',
+        x='Completion Rate (%)',
+        orientation='h',
+        range_x=[0, 100],
+        color='Completion Rate (%)',
+        color_continuous_scale=progress_scale,
+        text_auto='.1f'
+    )
+    fig.update_traces(
+        hovertemplate="<b>%{y}</b><br>Completion Rate: %{x:.1f}%<extra></extra>"
+    )
+    style_analytics_figure(
+        fig,
+        x_title="Completion Rate (%)",
+        y_title="PIC",
+        show_legend=False,
+        height=230 if for_pdf else None,
+        font_size=9 if for_pdf else None,
+        margin_left=70 if for_pdf else 20,
+        margin_right=28 if for_pdf else 20,
+    )
+    return fig
+
+
+def figure_to_png_bytes(fig, width, height, scale=2):
+    return pio.to_image(fig, format="png", width=width, height=height, scale=scale)
+
+
+def draw_wrapped_text(pdf, text, x, y_top, max_width, line_height=11):
+    words = str(text).split()
+    lines = []
+    current_line = ""
+
+    for word in words:
+        trial = word if not current_line else f"{current_line} {word}"
+        if pdf.stringWidth(trial, "Helvetica", 8.5) <= max_width:
+            current_line = trial
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+
+    if current_line:
+        lines.append(current_line)
+
+    current_y = y_top
+    for line in lines:
+        pdf.drawString(x, current_y, line)
+        current_y -= line_height
+    return current_y
+
+
+def draw_image_centered(pdf, image_reader, box_x, box_y, box_width, box_height, image_width, image_height):
+    scale = min(box_width / image_width, box_height / image_height)
+    draw_width = image_width * scale
+    draw_height = image_height * scale
+    draw_x = box_x + (box_width - draw_width) / 2
+    draw_y = box_y + (box_height - draw_height) / 2
+    pdf.drawImage(
+        image_reader,
+        draw_x,
+        draw_y,
+        width=draw_width,
+        height=draw_height,
+        preserveAspectRatio=True,
+        mask='auto'
+    )
+
+
+def build_summary_pdf_bytes(total_progress, fig_standar, fig_comparison, fig_completion, generated_at=None):
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError("reportlab is not installed.")
+
+    generated_at = generated_at or datetime.now()
+    buffer = io.BytesIO()
+    page_width, page_height = landscape(A4)
+    pdf = canvas.Canvas(buffer, pagesize=(page_width, page_height))
+
+    margin = 28
+    gutter = 16
+    header_h = 74
+    section_gap = 16
+    caption_h = 28
+    content_top = page_height - margin - header_h
+    content_height = content_top - margin
+    left_w = (page_width - (margin * 2) - gutter) * 0.56
+    right_w = (page_width - (margin * 2) - gutter) - left_w
+    right_chart_h = (content_height - section_gap - (caption_h * 2)) / 2
+    left_chart_h = content_height - caption_h
+
+    pdf.setTitle("Accreditation Analytics Summary")
+    pdf.setFillColor(colors.HexColor("#122033"))
+    pdf.setFont("Helvetica-Bold", 18)
+    pdf.drawString(margin, page_height - margin - 8, "Accreditation Analytics Summary")
+
+    pdf.setFillColor(colors.HexColor("#617187"))
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(
+        margin,
+        page_height - margin - 24,
+        f"Generated at {generated_at.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    kpi_x = page_width - margin - 185
+    kpi_y = page_height - margin - 52
+    pdf.setStrokeColor(colors.HexColor("#D7DEE8"))
+    pdf.setFillColor(colors.HexColor("#F7FAFC"))
+    pdf.roundRect(kpi_x, kpi_y, 185, 46, 10, stroke=1, fill=1)
+    pdf.setFillColor(colors.HexColor("#617187"))
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(kpi_x + 12, kpi_y + 29, "Overall Weighted Progress")
+    pdf.setFillColor(colors.HexColor("#1FA971"))
+    pdf.setFont("Helvetica-Bold", 20)
+    pdf.drawString(kpi_x + 12, kpi_y + 10, f"{total_progress:.2f}%")
+
+    chapter_img_width = 920
+    chapter_img_height = 980
+    bottom_img_width = 600
+    bottom_img_height = 420
+
+    chapter_img = ImageReader(io.BytesIO(figure_to_png_bytes(fig_standar, width=chapter_img_width, height=chapter_img_height)))
+    comparison_img = ImageReader(io.BytesIO(figure_to_png_bytes(fig_comparison, width=bottom_img_width, height=bottom_img_height)))
+    completion_img = ImageReader(io.BytesIO(figure_to_png_bytes(fig_completion, width=bottom_img_width, height=bottom_img_height)))
+
+    left_x = margin
+    right_x = margin + left_w + gutter
+    chart_y = margin + caption_h
+
+    draw_image_centered(
+        pdf,
+        chapter_img,
+        left_x,
+        chart_y,
+        left_w,
+        left_chart_h,
+        chapter_img_width,
+        chapter_img_height,
+    )
+
+    top_right_y = margin + caption_h + right_chart_h + section_gap + caption_h
+    draw_image_centered(
+        pdf,
+        comparison_img,
+        right_x,
+        top_right_y,
+        right_w,
+        right_chart_h,
+        bottom_img_width,
+        bottom_img_height,
+    )
+    draw_image_centered(
+        pdf,
+        completion_img,
+        right_x,
+        margin + caption_h,
+        right_w,
+        right_chart_h,
+        bottom_img_width,
+        bottom_img_height,
+    )
+
+    pdf.setFillColor(colors.HexColor("#243447"))
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawString(left_x, margin + 16, "Ringkasan Progres per Bab")
+    pdf.setFont("Helvetica", 8.5)
+    draw_wrapped_text(
+        pdf,
+        "Grafik ini menunjukkan tingkat penyelesaian tertimbang pada setiap bab akreditasi sehingga pembaca dapat melihat bab mana yang sudah maju dan bab mana yang masih tertinggal.",
+        left_x,
+        margin + 5,
+        left_w - 8,
+    )
+
+    upper_caption_y = top_right_y - 14
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawString(right_x, upper_caption_y, "Perbandingan Beban dan Realisasi PIC")
+    pdf.setFont("Helvetica", 8.5)
+    draw_wrapped_text(
+        pdf,
+        "Grafik ini membandingkan porsi tanggung jawab yang direncanakan untuk setiap PIC dengan progres aktual yang sudah dihasilkan dari tugas yang mereka pegang.",
+        right_x,
+        upper_caption_y - 11,
+        right_w - 8,
+    )
+
+    lower_caption_y = margin + 16
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawString(right_x, lower_caption_y, "Tingkat Penyelesaian Individual PIC")
+    pdf.setFont("Helvetica", 8.5)
+    draw_wrapped_text(
+        pdf,
+        "Grafik ini menunjukkan persentase penyelesaian kerja masing-masing PIC berdasarkan bobot tugas yang menjadi tanggung jawabnya.",
+        right_x,
+        lower_caption_y - 11,
+        right_w - 8,
+    )
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def prepare_chatbot_data(df: pd.DataFrame) -> dict:
@@ -760,7 +1080,7 @@ def main():
         # uploaded file automatically by accessing bisdig_outline_v1.csv
         if uploaded_file is None:
             try:
-                with open('data_akreditasi_updated(4).csv', 'rb') as f:
+                with open('data_akreditasi_updated(6).csv', 'rb') as f:
                     uploaded_file = io.BytesIO(f.read())
             except FileNotFoundError:
                 pass
@@ -1369,24 +1689,12 @@ def main():
                 progress_scale = ['#C0392B', '#F39C12', '#27AE60']
 
                 def style_figure(fig, *, x_title=None, y_title=None, show_legend=True):
-                    fig.update_layout(
-                        title=None,
-                        xaxis_title=x_title,
-                        yaxis_title=y_title,
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        margin=dict(l=20, r=20, t=20, b=20),
-                        legend=dict(
-                            orientation="h",
-                            yanchor="bottom",
-                            y=1.02,
-                            xanchor="right",
-                            x=1
-                        ) if show_legend else None
+                    return style_analytics_figure(
+                        fig,
+                        x_title=x_title,
+                        y_title=y_title,
+                        show_legend=show_legend,
                     )
-                    fig.update_xaxes(showgrid=True, gridcolor='rgba(142,160,184,0.18)', zeroline=False)
-                    fig.update_yaxes(showgrid=False, zeroline=False)
-                    return fig
 
                 # --- NEW: Chapter Reference Table ---
                 with st.expander("📖 Chapter Reference Lookup (Standar ID to Description)", expanded=False):
@@ -1715,6 +2023,7 @@ def main():
                     st.metric("Weight Integrity", f"{total_net:.1f}%", help="Should be 100%")
                     
                     st.progress(min(total_progress / 100, 1.0))
+                summary_report_pdf = None
                 st.divider()
 
                 # --- 4. PIC WORKLOAD (Using Net Bobot for Responsibility) ---
@@ -1788,13 +2097,8 @@ def main():
                 standar_stats = standar_stats.merge(standar_names, on='Standar', how='left')
                 standar_stats['Display_Label'] = standar_stats['Standar'].astype(str) + ": " + standar_stats['Standar_Name'].fillna("")
                 standar_stats = standar_stats.sort_values('Completion (%)', ascending=True)
-                
-                fig_standar = px.bar(standar_stats, y='Display_Label', x='Completion (%)', orientation='h',
-                                   range_x=[0, 100], color='Completion (%)', color_continuous_scale=progress_scale, text_auto='.1f')
-                fig_standar.update_traces(
-                    hovertemplate="<b>%{y}</b><br>Completion: %{x:.1f}%<extra></extra>"
-                )
-                style_figure(fig_standar, x_title="Completion (%)", y_title="Chapter", show_legend=False)
+
+                fig_standar = build_chapter_progress_figure(standar_stats, progress_scale)
                 st.plotly_chart(fig_standar, use_container_width=True)
 
 
@@ -1835,23 +2139,11 @@ def main():
                         value_name='Percentage'
                     )
 
-                    fig_comparison = px.bar(
+                    fig_comparison = build_pic_planned_vs_actual_figure(
                         plot_data,
-                        x='PIC',
-                        y='Percentage',
-                        color='Metric',
-                        barmode='group',
-                        text_auto='.1f',
-                        color_discrete_map={
-                            'Planned Responsibility (%)': planned_color,
-                            'Actual Progress (%)': actual_color
-                        }
+                        planned_color,
+                        actual_color,
                     )
-
-                    fig_comparison.update_traces(
-                        hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:.1f}%<extra></extra>"
-                    )
-                    style_figure(fig_comparison, x_title="PIC", y_title="Percentage (%)")
                     st.plotly_chart(fig_comparison, use_container_width=True)
 
                     # --- 7. PIC INDIVIDUAL COMPLETION RATE (New Chart) ---
@@ -1868,23 +2160,50 @@ def main():
                     # Sort for better visualization
                     pic_completion = pic_completion.sort_values('Completion Rate (%)', ascending=True)
 
-                    fig_completion = px.bar(
-                        pic_completion,
-                        y='PIC',
-                        x='Completion Rate (%)',
-                        orientation='h',
-                        range_x=[0, 100],
-                        color='Completion Rate (%)',
-                        color_continuous_scale=progress_scale,
-                        text_auto='.1f'
-                    )
-                    
-                    fig_completion.update_traces(
-                        hovertemplate="<b>%{y}</b><br>Completion Rate: %{x:.1f}%<extra></extra>"
-                    )
-                    style_figure(fig_completion, x_title="Completion Rate (%)", y_title="PIC", show_legend=False)
+                    fig_completion = build_pic_completion_rate_figure(pic_completion, progress_scale)
                     st.plotly_chart(fig_completion, use_container_width=True)
-                    
+
+                    export_col1, export_col2 = st.columns([0.6, 0.4])
+                    with export_col1:
+                        st.caption("Download a one-page PDF executive summary with the overall KPI and these three charts.")
+                    with export_col2:
+                        if REPORTLAB_AVAILABLE:
+                            try:
+                                pdf_fig_standar = build_chapter_progress_figure(standar_stats, progress_scale, for_pdf=True)
+                                pdf_fig_comparison = build_pic_planned_vs_actual_figure(
+                                    plot_data,
+                                    planned_color,
+                                    actual_color,
+                                    for_pdf=True,
+                                )
+                                pdf_fig_completion = build_pic_completion_rate_figure(
+                                    pic_completion,
+                                    progress_scale,
+                                    for_pdf=True,
+                                )
+                                summary_report_pdf = build_summary_pdf_bytes(
+                                    total_progress=total_progress,
+                                    fig_standar=pdf_fig_standar,
+                                    fig_comparison=pdf_fig_comparison,
+                                    fig_completion=pdf_fig_completion,
+                                    generated_at=datetime.now(),
+                                )
+                            except Exception as export_error:
+                                st.warning(
+                                    "PDF export is unavailable until image export dependencies are installed correctly "
+                                    f"(`{export_error}`)."
+                                )
+                            else:
+                                st.download_button(
+                                    label="Download PDF Summary",
+                                    data=summary_report_pdf,
+                                    file_name="accreditation_analytics_summary.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                )
+                        else:
+                            st.info("Install `reportlab` to enable PDF export.")
+
                     # Optional: Show the data table
                     with st.expander("📋 View Detailed Numbers"):
                         st.dataframe(pic_completion, use_container_width=True, hide_index=True)

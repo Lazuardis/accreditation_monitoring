@@ -23,6 +23,7 @@ The UI has 3 tabs:
 3. `Analytics`
 - Compute weighted progress and workload from hierarchy weights.
 - Show chapter progress, PIC responsibility share, planned vs actual PIC progress, completion rate, and PIC collaboration table.
+- Export a one-page PDF summary with the overall weighted progress KPI and selected charts.
 - Provide per-PIC drilldown and CSV export for collaboration data.
 
 ## Runtime Topology
@@ -58,6 +59,7 @@ All stateful interactions use `st.session_state`.
 - Downloaded from UI:
   - `data_akreditasi_updated.csv` (master export)
   - `collaboration_<PIC>.csv` (PIC collaboration export)
+  - `accreditation_analytics_summary.pdf` (one-page analytics summary export)
 
 ## Expected Data Columns
 

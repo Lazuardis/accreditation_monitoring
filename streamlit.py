@@ -1080,7 +1080,7 @@ def main():
         # uploaded file automatically by accessing bisdig_outline_v1.csv
         if uploaded_file is None:
             try:
-                with open('data_akreditasi_updated(6).csv', 'rb') as f:
+                with open('data_akreditasi_updated(7).csv', 'rb') as f:
                     uploaded_file = io.BytesIO(f.read())
             except FileNotFoundError:
                 pass

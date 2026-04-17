@@ -1123,7 +1123,7 @@ def main():
                 if 'PIC' not in df.columns: df['PIC'] = ""
                 if 'Item Preseden/Referensi' not in df.columns: df['Item Preseden/Referensi'] = ""
                 # Strip whitespace from string columns
-                df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+                df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
                 st.session_state.df = df
             
             # --- SELECTION STATE INITIALIZATION ---

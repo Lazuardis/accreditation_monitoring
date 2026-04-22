@@ -160,8 +160,21 @@ def truncate_text(text, max_length=60):
     return text_str[:max_length - 3] + "..."
 
 
-def build_chapter_progress_figure(standar_stats, progress_scale, *, for_pdf=False):
-    chart_df = standar_stats.copy()
+def natural_sort_key(value):
+    parts = re.split(r'(\d+(?:\.\d+)*)', str(value))
+    key = []
+    for part in parts:
+        if not part:
+            continue
+        if re.fullmatch(r'\d+(?:\.\d+)*', part):
+            key.extend(int(piece) for piece in part.split('.'))
+        else:
+            key.append(part.lower())
+    return tuple(key)
+
+
+def build_chapter_progress_figure(chart_stats, progress_scale, *, for_pdf=False, y_title="Chapter"):
+    chart_df = chart_stats.copy()
     if for_pdf:
         chart_df['Display_Label'] = chart_df['Display_Label'].apply(lambda x: truncate_text(x, 52))
 
@@ -178,10 +191,15 @@ def build_chapter_progress_figure(standar_stats, progress_scale, *, for_pdf=Fals
     fig.update_traces(
         hovertemplate="<b>%{y}</b><br>Completion: %{x:.1f}%<extra></extra>"
     )
+    fig.update_yaxes(
+        categoryorder='array',
+        categoryarray=chart_df['Display_Label'].tolist(),
+        autorange='reversed',
+    )
     style_analytics_figure(
         fig,
         x_title="Completion (%)",
-        y_title="Chapter",
+        y_title=y_title,
         show_legend=False,
         height=360 if for_pdf else None,
         font_size=10 if for_pdf else None,
@@ -217,6 +235,61 @@ def build_pic_planned_vs_actual_figure(plot_data, planned_color, actual_color, *
         margin_right=28 if for_pdf else 20,
     )
     return fig
+
+
+def build_substandar_progress_stats(leaf_df, raw_df, target_standar):
+    target_standar = str(target_standar).strip()
+    target_leaf_df = leaf_df[leaf_df['Standar'].astype(str).str.strip() == target_standar].copy()
+    if target_leaf_df.empty:
+        return pd.DataFrame(columns=['SubStandar', 'Completion (%)', 'SubStandar_Name', 'Display_Label'])
+
+    substandar_names = raw_df[
+        raw_df['Standar'].astype(str).str.strip().eq(target_standar)
+        & raw_df['SubStandar'].notna()
+        & raw_df['Item'].isna()
+    ][['SubStandar', 'Uraian']].copy()
+    substandar_names = substandar_names.rename(columns={'Uraian': 'SubStandar_Name'})
+
+    substandar_stats = target_leaf_df.groupby('SubStandar').apply(
+        lambda x: (x['Progress'] * x['Net_Bobot']).sum() / x['Net_Bobot'].sum() if x['Net_Bobot'].sum() > 0 else 0.0
+    ).reset_index(name='Completion (%)')
+    substandar_stats = substandar_stats.merge(substandar_names, on='SubStandar', how='left')
+    substandar_stats['Display_Label'] = (
+        substandar_stats['SubStandar'].astype(str) + ": " + substandar_stats['SubStandar_Name'].fillna("")
+    )
+    return substandar_stats
+
+
+def build_mixed_chapter_progress_stats(leaf_df, raw_df, expanded_standar):
+    chapter_names = raw_df[
+        raw_df["SubStandar"].isna() & raw_df["Item"].isna() & raw_df["Standar"].notna()
+    ][["Standar", "Uraian"]].copy()
+    chapter_names = chapter_names.rename(columns={"Uraian": "Standar_Name"})
+
+    standar_stats = leaf_df.groupby("Standar").apply(
+        lambda x: (x["Progress"] * x["Net_Bobot"]).sum() / x["Net_Bobot"].sum() if x["Net_Bobot"].sum() > 0 else 0.0
+    ).reset_index(name="Completion (%)")
+    standar_stats = standar_stats.merge(chapter_names, on="Standar", how="left")
+    standar_stats["Display_Label"] = standar_stats["Standar"].astype(str) + ": " + standar_stats["Standar_Name"].fillna("")
+
+    expanded_standar = str(expanded_standar).strip()
+    non_expanded_stats = standar_stats[standar_stats["Standar"].astype(str).str.strip() != expanded_standar].copy()
+    non_expanded_stats["Sort_Key"] = non_expanded_stats["Standar"].astype(str).str.strip()
+
+    expanded_substandar_stats = build_substandar_progress_stats(leaf_df, raw_df, expanded_standar).copy()
+    if not expanded_substandar_stats.empty:
+        expanded_substandar_stats["Sort_Key"] = expanded_substandar_stats["SubStandar"].astype(str).str.strip()
+        expanded_substandar_stats = expanded_substandar_stats[["Completion (%)", "Display_Label", "Sort_Key"]]
+
+    combined_stats = pd.concat(
+        [
+            non_expanded_stats[["Completion (%)", "Display_Label", "Sort_Key"]],
+            expanded_substandar_stats,
+        ],
+        ignore_index=True,
+    )
+    combined_stats = combined_stats.sort_values("Sort_Key", ascending=True, key=lambda s: s.map(natural_sort_key))
+    return combined_stats
 
 
 def build_pic_completion_rate_figure(pic_completion, progress_scale, *, for_pdf=False):
@@ -1080,7 +1153,7 @@ def main():
         # uploaded file automatically by accessing bisdig_outline_v1.csv
         if uploaded_file is None:
             try:
-                with open('data_akreditasi_updated(7).csv', 'rb') as f:
+                with open('data_akreditasi_updated(9).csv', 'rb') as f:
                     uploaded_file = io.BytesIO(f.read())
             except FileNotFoundError:
                 pass
@@ -2084,21 +2157,12 @@ def main():
                 # --- 5. STANDAR PERFORMANCE ---
                 st.subheader("📂 Chapter Progress Summary")
                 
-                # Get Standar names (Uraian from header rows)
-                standar_names = df[df['SubStandar'].isna() & df['Item'].isna() & df['Standar'].notna()][['Standar', 'Uraian']]
-                standar_names = standar_names.rename(columns={'Uraian': 'Standar_Name'})
-                
-                standar_stats = leaf_df.groupby('Standar').apply(
-                    lambda x: (x['Progress'] * x['Net_Bobot']).sum() / x['Net_Bobot'].sum() if x['Net_Bobot'].sum() > 0 else 0
-                ).reset_index()
-                standar_stats.columns = ['Standar', 'Completion (%)']
-                
-                # Merge names for display
-                standar_stats = standar_stats.merge(standar_names, on='Standar', how='left')
-                standar_stats['Display_Label'] = standar_stats['Standar'].astype(str) + ": " + standar_stats['Standar_Name'].fillna("")
-                standar_stats = standar_stats.sort_values('Completion (%)', ascending=True)
-
-                fig_standar = build_chapter_progress_figure(standar_stats, progress_scale)
+                mixed_chapter_stats = build_mixed_chapter_progress_stats(leaf_df, df, expanded_standar='6')
+                fig_standar = build_chapter_progress_figure(
+                    mixed_chapter_stats,
+                    progress_scale,
+                    y_title="Chapter / Sub-Standard",
+                )
                 st.plotly_chart(fig_standar, use_container_width=True)
 
 
@@ -2169,7 +2233,12 @@ def main():
                     with export_col2:
                         if REPORTLAB_AVAILABLE:
                             try:
-                                pdf_fig_standar = build_chapter_progress_figure(standar_stats, progress_scale, for_pdf=True)
+                                pdf_fig_standar = build_chapter_progress_figure(
+                                    mixed_chapter_stats,
+                                    progress_scale,
+                                    for_pdf=True,
+                                    y_title="Chapter / Sub-Standard",
+                                )
                                 pdf_fig_comparison = build_pic_planned_vs_actual_figure(
                                     plot_data,
                                     planned_color,
